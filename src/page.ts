@@ -1,0 +1,272 @@
+import { config } from './config.js'
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const STYLES = `
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:#0b0d10;color:#e6e9ee;
+  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.card{width:100%;max-width:520px;background:#14171c;border:1px solid #262c35;border-radius:14px;
+  padding:28px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.12em;
+  text-transform:uppercase;color:#7d8796;margin-bottom:20px}
+.dot{width:7px;height:7px;border-radius:50%;background:#4ade80}
+h1{margin:0 0 6px;font-size:21px;font-weight:600;line-height:1.3}
+.sub{margin:0 0 20px;color:#98a2b3;font-size:14px}
+.meta{border:1px solid #262c35;border-radius:10px;padding:14px 16px;margin-bottom:18px;background:#0f1216}
+.row{display:flex;justify-content:space-between;gap:16px;padding:5px 0;font-size:13px}
+.row+.row{border-top:1px solid #1e242c}
+.k{color:#7d8796;flex:none}
+.v{color:#e6e9ee;text-align:right;word-break:break-word}
+label{display:block;font-size:13px;color:#98a2b3;margin-bottom:7px}
+.field{position:relative}
+textarea,input[type=password],input[type=text]{width:100%;background:#0f1216;color:#e6e9ee;
+  border:1px solid #2c333d;border-radius:9px;padding:11px 12px;font:14px/1.45 ui-monospace,
+  SFMono-Regular,Menlo,monospace;resize:vertical}
+textarea:focus,input:focus{outline:none;border-color:#4d7cfe;box-shadow:0 0 0 3px rgba(77,124,254,.16)}
+textarea{min-height:88px}
+.toggle{background:none;border:none;color:#7d8796;font-size:12px;cursor:pointer;padding:6px 0;margin-top:2px}
+.toggle:hover{color:#c3cad6}
+button.primary{width:100%;margin-top:16px;padding:12px;border:none;border-radius:9px;
+  background:#4d7cfe;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+button.primary:hover{background:#3f6cf0}
+button.primary:disabled{background:#2a3140;color:#6b7280;cursor:not-allowed}
+.warn{margin-top:18px;padding:12px 14px;border-radius:9px;font-size:12.5px;line-height:1.5;
+  background:rgba(234,179,8,.07);border:1px solid rgba(234,179,8,.25);color:#e3c264}
+.err{margin-top:14px;padding:11px 13px;border-radius:9px;font-size:13px;
+  background:rgba(239,68,68,.09);border:1px solid rgba(239,68,68,.3);color:#f9a8a8}
+.ok-icon{width:44px;height:44px;border-radius:50%;background:rgba(74,222,128,.12);
+  border:1px solid rgba(74,222,128,.35);display:flex;align-items:center;justify-content:center;
+  font-size:22px;color:#4ade80;margin-bottom:16px}
+.foot{margin-top:22px;padding-top:14px;border-top:1px solid #1e242c;color:#6b7280;font-size:11.5px;line-height:1.6}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#c3cad6}
+.hidden{display:none}
+`
+
+function shell(title: string, nonce: string, body: string, script = ''): string {
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<title>${escapeHtml(title)}</title>
+<style nonce="${nonce}">${STYLES}</style>
+</head>
+<body>
+<main class="card">
+  <div class="brand"><span class="dot"></span> handoff</div>
+  ${body}
+</main>
+${script ? `<script nonce="${nonce}">${script}</script>` : ''}
+</body>
+</html>`
+}
+
+export function renderClosed(nonce: string, opts: { title: string; message: string }): string {
+  return shell(
+    opts.title,
+    nonce,
+    `<h1>${escapeHtml(opts.title)}</h1>
+     <p class="sub">${escapeHtml(opts.message)}</p>
+     <div class="foot">Si tu penses que c'est une erreur, redemande un nouveau lien a ton agent.
+     Un lien handoff est a usage unique et a duree limitee.</div>`,
+  )
+}
+
+export function renderSuccess(nonce: string, label: string): string {
+  return shell(
+    'Secret transmis',
+    nonce,
+    `<div class="ok-icon">&#10003;</div>
+     <h1>C'est transmis</h1>
+     <p class="sub">${escapeHtml(label)} a ete chiffre dans ton navigateur puis envoye.
+     L'agent peut maintenant le recuperer, une seule fois.</p>
+     <div class="foot">Tu peux fermer cet onglet. Ce lien ne fonctionnera plus.</div>`,
+  )
+}
+
+export function renderForm(
+  nonce: string,
+  req: {
+    id: string
+    requester: string
+    label: string
+    purpose: string | null
+    expiresAt: number
+    maxBytes: number
+  },
+): string {
+  const body = `
+  <h1>${escapeHtml(req.requester)} demande&nbsp;: ${escapeHtml(req.label)}</h1>
+  <p class="sub">Colle la valeur ci-dessous. Elle est chiffree dans ton navigateur avant
+  d'etre envoyee&nbsp;: le serveur ne la voit jamais en clair.</p>
+
+  <div class="meta">
+    <div class="row"><span class="k">Demandeur</span><span class="v">${escapeHtml(req.requester)}</span></div>
+    <div class="row"><span class="k">Demande</span><span class="v">${escapeHtml(req.label)}</span></div>
+    ${req.purpose ? `<div class="row"><span class="k">Motif</span><span class="v">${escapeHtml(req.purpose)}</span></div>` : ''}
+    <div class="row"><span class="k">Expire dans</span><span class="v" id="countdown">&mdash;</span></div>
+  </div>
+
+  <form id="form">
+    <label for="secret">Valeur a transmettre</label>
+    <div class="field">
+      <textarea id="secret" spellcheck="false" autocapitalize="off" autocorrect="off"
+        autocomplete="off" placeholder="sk-..." required></textarea>
+    </div>
+    <button type="button" class="toggle" id="toggle">Masquer la saisie</button>
+    <button type="submit" class="primary" id="submit">Envoyer de maniere chiffree</button>
+  </form>
+
+  <div class="err hidden" id="error"></div>
+
+  <div class="warn">
+    Ne remplis ce formulaire que si tu <strong>attendais</strong> cette demande.
+    Personne de legitime ne te demandera un mot de passe principal ni un code de recuperation
+    par ce biais. En cas de doute, ferme cet onglet.
+  </div>
+
+  <div class="foot">
+    Chiffrement AES-GCM 256 effectue dans ton navigateur. La cle vit dans le fragment
+    <code>#</code> de l'URL, que ton navigateur n'envoie jamais au serveur.
+    Le serveur ne stocke que du contenu chiffre.
+  </div>`
+
+  const script = `
+(function () {
+  var EXPIRES = ${req.expiresAt};
+  var MAX_BYTES = ${req.maxBytes};
+  var ID = ${JSON.stringify(req.id)};
+
+  var form = document.getElementById('form');
+  var input = document.getElementById('secret');
+  var submit = document.getElementById('submit');
+  var errorBox = document.getElementById('error');
+  var countdown = document.getElementById('countdown');
+  var toggle = document.getElementById('toggle');
+
+  function fail(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.remove('hidden');
+  }
+
+  // La cle de chiffrement vit uniquement dans le fragment: jamais transmise au serveur.
+  var rawKey = location.hash.slice(1);
+  if (!rawKey) {
+    fail("Lien incomplet: la cle de chiffrement manque. Le lien a probablement ete tronque lors de la copie. Redemande-en un.");
+    submit.disabled = true;
+    input.disabled = true;
+  }
+
+  function tick() {
+    var left = Math.max(0, Math.round((EXPIRES - Date.now()) / 1000));
+    if (left <= 0) {
+      countdown.textContent = 'expire';
+      submit.disabled = true;
+      input.disabled = true;
+      return;
+    }
+    var m = Math.floor(left / 60), s = left % 60;
+    countdown.textContent = m > 0 ? m + ' min ' + String(s).padStart(2, '0') + ' s' : s + ' s';
+    setTimeout(tick, 1000);
+  }
+  tick();
+
+  var masked = false;
+  toggle.addEventListener('click', function () {
+    masked = !masked;
+    input.style.webkitTextSecurity = masked ? 'disc' : 'none';
+    input.style.textSecurity = masked ? 'disc' : 'none';
+    toggle.textContent = masked ? 'Afficher la saisie' : 'Masquer la saisie';
+  });
+
+  function b64(buf) {
+    var bytes = new Uint8Array(buf), out = '';
+    for (var i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+    return btoa(out);
+  }
+
+  function keyBytes(s) {
+    var b64s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64s.length % 4) b64s += '=';
+    var bin = atob(b64s), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    errorBox.classList.add('hidden');
+
+    var value = input.value;
+    if (!value) return fail('Le champ est vide.');
+    if (new TextEncoder().encode(value).length > MAX_BYTES)
+      return fail('Valeur trop longue (maximum ' + MAX_BYTES + ' octets).');
+
+    submit.disabled = true;
+    submit.textContent = 'Chiffrement...';
+
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+
+    crypto.subtle
+      .importKey('raw', keyBytes(rawKey), { name: 'AES-GCM' }, false, ['encrypt'])
+      .then(function (key) {
+        return crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv },
+          key,
+          new TextEncoder().encode(value)
+        );
+      })
+      .then(function (ct) {
+        submit.textContent = 'Envoi...';
+        return fetch('/s/' + ID, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ciphertext: b64(ct), iv: b64(iv) })
+        });
+      })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.data && r.data.message ? r.data.message : 'Envoi refuse.');
+        input.value = '';
+        location.replace('/s/' + ID + '/done');
+      })
+      .catch(function (err) {
+        submit.disabled = false;
+        submit.textContent = 'Envoyer de maniere chiffree';
+        fail(err && err.message ? err.message : 'Une erreur est survenue.');
+      });
+  });
+})();`
+
+  return shell(`${req.requester} demande un secret`, nonce, body, script)
+}
+
+export function renderIndex(nonce: string): string {
+  return shell(
+    'handoff',
+    nonce,
+    `<h1>handoff</h1>
+     <p class="sub">Un agent IA demande un secret a son humain via un lien ephemere.
+     Le secret est chiffre dans le navigateur&nbsp;: le serveur ne le voit jamais en clair.</p>
+     <div class="meta">
+       <div class="row"><span class="k">API</span><span class="v"><code>POST /v1/requests</code></span></div>
+       <div class="row"><span class="k">Spec</span><span class="v"><code>${escapeHtml(config.baseUrl)}/openapi.json</code></span></div>
+       <div class="row"><span class="k">Sante</span><span class="v"><code>/healthz</code></span></div>
+     </div>
+     <div class="foot">Il n'y a rien a voir ici sans un lien de demande valide.</div>`,
+  )
+}
