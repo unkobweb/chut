@@ -29,7 +29,7 @@ app.get('/', (c) => {
   return c.body(renderIndex(n))
 })
 
-app.get('/healthz', (c) => c.json({ ok: true, service: 'handoff', version: '0.1.0' }))
+app.get('/healthz', (c) => c.json({ ok: true, service: 'chut', version: '0.1.0' }))
 app.get('/openapi.json', (c) => c.json(openapi))
 
 app.route('/v1', api)
@@ -45,7 +45,7 @@ app.onError((err, c) => {
 startSweeper()
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`handoff ecoute sur http://localhost:${info.port}  (public: ${config.baseUrl})`)
+  console.log(`chut ecoute sur http://localhost:${info.port}  (public: ${config.baseUrl})`)
   if (IS_INSECURE_DEFAULT) {
     console.warn(
       '\n  ATTENTION: valeurs par defaut detectees (API_KEYS et/ou IP_HASH_SALT).\n' +

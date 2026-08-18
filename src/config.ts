@@ -32,7 +32,7 @@ export const API_KEY_HASHES = new Set(
 export const config = {
   port: envInt('PORT', 8787),
   baseUrl: env('BASE_URL', 'http://localhost:8787').replace(/\/+$/, ''),
-  dbPath: env('DB_PATH', './data/handoff.db'),
+  dbPath: env('DB_PATH', './data/chut.db'),
   defaultTtl: envInt('DEFAULT_TTL_SECONDS', 900),
   maxTtl: envInt('MAX_TTL_SECONDS', 86_400),
   maxSecretBytes: envInt('MAX_SECRET_BYTES', 8_192),

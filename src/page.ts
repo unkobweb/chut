@@ -65,7 +65,7 @@ function shell(title: string, nonce: string, body: string, script = ''): string 
 </head>
 <body>
 <main class="card">
-  <div class="brand"><span class="dot"></span> handoff</div>
+  <div class="brand"><span class="dot"></span> chut</div>
   ${body}
 </main>
 ${script ? `<script nonce="${nonce}">${script}</script>` : ''}
@@ -80,7 +80,7 @@ export function renderClosed(nonce: string, opts: { title: string; message: stri
     `<h1>${escapeHtml(opts.title)}</h1>
      <p class="sub">${escapeHtml(opts.message)}</p>
      <div class="foot">Si tu penses que c'est une erreur, redemande un nouveau lien a ton agent.
-     Un lien handoff est a usage unique et a duree limitee.</div>`,
+     Un lien chut est a usage unique et a duree limitee.</div>`,
   )
 }
 
@@ -257,9 +257,9 @@ export function renderForm(
 
 export function renderIndex(nonce: string): string {
   return shell(
-    'handoff',
+    'chut',
     nonce,
-    `<h1>handoff</h1>
+    `<h1>chut</h1>
      <p class="sub">Un agent IA demande un secret a son humain via un lien ephemere.
      Le secret est chiffre dans le navigateur&nbsp;: le serveur ne le voit jamais en clair.</p>
      <div class="meta">

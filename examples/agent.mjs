@@ -6,8 +6,8 @@
  * A recopier dans ton bot Telegram / n8n / boucle maison.
  */
 
-const BASE = process.env.HANDOFF_URL ?? 'http://localhost:8787'
-const API_KEY = process.env.HANDOFF_API_KEY ?? 'dev_change_me'
+const BASE = process.env.CHUT_URL ?? 'http://localhost:8787'
+const API_KEY = process.env.CHUT_API_KEY ?? 'dev_change_me'
 
 /**
  * Cree une demande. Renvoie l'URL a montrer a l'humain et les jetons a garder secrets.
@@ -18,7 +18,7 @@ export async function askHuman({ requester, label, purpose, ttlSeconds = 900 }) 
     headers: { 'content-type': 'application/json', authorization: `Bearer ${API_KEY}` },
     body: JSON.stringify({ requester, label, purpose, ttl_seconds: ttlSeconds }),
   })
-  if (!res.ok) throw new Error(`handoff: creation refusee (${res.status})`)
+  if (!res.ok) throw new Error(`chut: creation refusee (${res.status})`)
   return res.json()
 }
 
@@ -48,7 +48,7 @@ export async function reveal({ id, poll_token, encryption_key }) {
     body: JSON.stringify({ poll_token, encryption_key }),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(`handoff: revelation impossible (${data.error})`)
+  if (!res.ok) throw new Error(`chut: revelation impossible (${data.error})`)
   return data.secret
 }
 

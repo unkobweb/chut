@@ -44,7 +44,7 @@ function clientIp(c: Context): string {
 const CLOSED_COPY: Record<string, { title: string; message: string }> = {
   filled: {
     title: 'Deja rempli',
-    message: 'Ce lien a deja recu une valeur. Un lien handoff ne sert qu’une fois.',
+    message: 'Ce lien a deja recu une valeur. Un lien chut ne sert qu’une fois.',
   },
   revealed: {
     title: 'Deja utilise',

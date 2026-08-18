@@ -7,7 +7,7 @@ import { config } from './config.js'
 export const openapi = {
   openapi: '3.1.0',
   info: {
-    title: 'handoff — demande de secret',
+    title: 'chut — demande de secret',
     version: '0.1.0',
     description:
       "Permet a un agent de reclamer un secret (cle API, token, mot de passe) a son humain " +

@@ -1,4 +1,4 @@
-# handoff
+# chut
 
 **Un agent IA a besoin d'une clé API. Il ne la demande plus dans le chat.**
 
@@ -15,7 +15,7 @@ en clair et la base de données seule ne permet pas de le lire.
 ## Le flux
 
 ```
-  Agent                        handoff                       Humain
+  Agent                        chut                       Humain
     │                             │                             │
     │ POST /v1/requests           │                             │
     │────────────────────────────>│                             │
@@ -190,7 +190,7 @@ et **HTTPS obligatoire en production** — le serveur émet un avertissement si 
 | `PORT` | `8787` | Port d'écoute |
 | `BASE_URL` | `http://localhost:8787` | URL publique, celle mise dans le lien |
 | `API_KEYS` | — | Clés agent acceptées, séparées par des virgules |
-| `DB_PATH` | `./data/handoff.db` | Fichier SQLite |
+| `DB_PATH` | `./data/chut.db` | Fichier SQLite |
 | `DEFAULT_TTL_SECONDS` | `900` | Durée de vie par défaut |
 | `MAX_TTL_SECONDS` | `86400` | Plafond |
 | `MAX_SECRET_BYTES` | `8192` | Taille max de la valeur |
@@ -205,13 +205,13 @@ définitivement les lignes terminées depuis plus de 7 jours.
 ## Déploiement
 
 ```bash
-docker build -t handoff .
-docker run -d --name handoff -p 8787:8787 \
-  -e BASE_URL=https://handoff.example.com \
+docker build -t chut .
+docker run -d --name chut -p 8787:8787 \
+  -e BASE_URL=https://chut.example.com \
   -e API_KEYS=$(openssl rand -base64 32 | tr -d '=+/') \
   -e IP_HASH_SALT=$(openssl rand -hex 16) \
-  -v handoff-data:/app/data \
-  handoff
+  -v chut-data:/app/data \
+  chut
 ```
 
 Derrière un reverse proxy TLS. Pense à transmettre `X-Forwarded-For` pour que l'empreinte IP
