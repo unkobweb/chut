@@ -205,8 +205,29 @@ api.post('/requests/:id/reveal', async (c) => {
     )
   }
 
-  if (row.burn_on_reveal === 1) queries.burn.run({ id: row.id, now })
-  else queries.markRevealed.run({ id: row.id, now })
+  // Le dechiffrement a lieu AVANT toute ecriture : une encryption_key erronee
+  // repart en 400 sans detruire le secret de l'agent legitime.
+  //
+  // Ensuite, l'UPDATE conditionnel EST la course. Plusieurs appels simultanes ont
+  // pu lire la meme ligne et dechiffrer en memoire, mais un seul verra changes===1.
+  // Les autres repartent en 409 — ce qui preserve le burn comme detecteur
+  // d'intrusion : un voleur qui court a cote de l'agent ne peut plus obtenir le
+  // secret « en plus » de lui sans que l'un des deux voie un 409.
+  if (row.burn_on_reveal === 1) {
+    const claim = queries.burn.run({ id: row.id, now })
+    if (claim.changes === 0) {
+      return c.json(
+        {
+          error: 'not_filled',
+          status: 'revealed',
+          message: 'Ce secret vient d’etre revele par un autre appel. Il n’est plus disponible.',
+        },
+        409,
+      )
+    }
+  } else {
+    queries.markRevealed.run({ id: row.id, now })
+  }
 
   return c.json({
     id: row.id,

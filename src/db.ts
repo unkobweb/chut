@@ -97,13 +97,19 @@ export const queries = {
    * donc relisible jusqu'a expiration (utile si l'agent redemarre en cours de tache).
    */
   markRevealed: db.prepare(`
-    UPDATE requests SET revealed_at = COALESCE(revealed_at, @now) WHERE id = @id
+    UPDATE requests SET revealed_at = COALESCE(revealed_at, @now)
+     WHERE id = @id AND status = 'filled'
   `),
 
+  /**
+   * La garde `status = 'filled'` n'est pas decorative : c'est ELLE qui arbitre la
+   * course. SQLite garantit qu'un seul UPDATE concurrent modifiera la ligne, donc
+   * un seul appelant obtiendra changes === 1 et aura le droit de rendre le secret.
+   */
   burn: db.prepare(`
     UPDATE requests
        SET status = 'revealed', revealed_at = @now, ciphertext = NULL, iv = NULL
-     WHERE id = @id
+     WHERE id = @id AND status = 'filled'
   `),
 
   cancel: db.prepare(`
