@@ -7,6 +7,7 @@
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
+import Database from 'better-sqlite3'
 
 const BASE = process.env.BASE ?? 'http://localhost:8787'
 const KEY = process.env.API_KEY ?? 'dev_change_me'
@@ -135,6 +136,50 @@ console.log('\n\x1b[1mTerminal states\x1b[0m')
 await page.goto(created.url)
 await page.screenshot({ path: `${OUT}/4-consumed-link.png`, fullPage: true })
 check('a reused link shows a terminal screen', (await page.textContent('h1')).length > 0)
+
+// --- expiry bar ------------------------------------------------------------
+// The bar derived its total from Date.now() at load, so it restarted full on
+// every refresh however little time was left — the one thing it exists to show.
+// Aged in the database rather than by waiting, so the check is instant.
+console.log('\n\x1b[1mExpiry bar\x1b[0m')
+{
+  const aged = await (
+    await api('/v1/requests', {
+      method: 'POST',
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', ttl_seconds: 900 }),
+    })
+  ).json()
+
+  const db = new Database('./data/chut.db')
+  const readBar = async (elapsedRatio) => {
+    const now = Date.now()
+    const span = 900_000
+    db.prepare('UPDATE requests SET created_at = ?, expires_at = ? WHERE id = ?').run(
+      now - span * elapsedRatio,
+      now + span * (1 - elapsedRatio),
+      aged.id,
+    )
+    const view = await browser.newPage()
+    await view.goto(aged.url, { waitUntil: 'networkidle' })
+    await view.waitForTimeout(300)
+    const bar = await view.textContent('#countdown-bar')
+    await view.close()
+    return [...bar].filter((ch) => ch === '\u2593').length
+  }
+
+  const fresh = await readBar(0)
+  const half = await readBar(0.5)
+  const nearly = await readBar(0.9)
+  db.close()
+
+  check('a fresh link shows a full bar', fresh === 16, `${fresh}/16`)
+  check(
+    'a link half spent shows about half a bar',
+    Math.abs(half - 8) <= 1,
+    `${half}/16 after half the window — the bar ignores elapsed time`,
+  )
+  check('a nearly expired link shows a nearly empty bar', nearly <= 3, `${nearly}/16`)
+}
 
 // --- cross-site arrival ------------------------------------------------------
 // A human reaches this link by clicking it in Telegram web, Slack or an email

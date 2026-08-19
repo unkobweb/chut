@@ -89,6 +89,7 @@ export function FormPage(props: {
   requester: string
   label: string
   purpose: string | null
+  createdAt: number
   expiresAt: number
   maxBytes: number
 }): string {
@@ -97,6 +98,9 @@ export function FormPage(props: {
 
   const config = safeJson({
     id: props.id,
+    // Both ends of the window. Deriving the total from Date.now() at load meant
+    // the bar restarted full on every refresh, however little time was left.
+    createdAt: props.createdAt,
     expiresAt: props.expiresAt,
     maxBytes: props.maxBytes,
     t: {
@@ -165,7 +169,7 @@ export function FormPage(props: {
               type="button"
               id="toggle"
               aria-pressed="false"
-              class="font-mono text-sm text-phosphor underline-offset-4 hover:underline"
+              class="cursor-pointer font-mono text-sm text-phosphor underline-offset-4 hover:underline"
             >
               [ {t.show} ]
             </button>
@@ -194,7 +198,7 @@ export function FormPage(props: {
           <button
             type="submit"
             id="submit"
-            class="mt-4 w-full bg-phosphor px-4 py-3 font-mono text-sm font-bold tracking-wide text-surface uppercase disabled:opacity-50"
+            class="btn-fill mt-4 w-full cursor-pointer bg-phosphor px-4 py-3 font-mono text-sm font-bold tracking-wide text-surface uppercase disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t.submit}
           </button>
@@ -384,7 +388,7 @@ const CLIENT_SCRIPT = `
   var bar = document.getElementById('countdown-bar');
   var CELLS = 16;
   var FULL = '\u2593', EMPTY = '\u2591';
-  var total = Math.max(1, CFG.expiresAt - Date.now());
+  var total = Math.max(1, CFG.expiresAt - CFG.createdAt);
   var dead = false;
   function tick() {
     var remaining = CFG.expiresAt - Date.now();

@@ -21,6 +21,7 @@
   --color-panel: #0e1211;
   --color-line: #1e2523;
   --color-phosphor: #4ade80;
+  --color-phosphor-deep: #22a75a;
   --color-deep: #123a25;
   --color-alarm: #f87171;
   --color-caution: #e3c264;
@@ -42,6 +43,7 @@
       --color-panel: #fbfaf7;
       --color-line: #dcd9d1;
       --color-phosphor: #0f6636;
+      --color-phosphor-deep: #0a4525;
       --color-deep: #dcecdf;
       --color-alarm: #b4342f;
       --color-caution: #7a5c12;
@@ -57,6 +59,28 @@
   :focus-visible {
     outline: 2px solid var(--color-phosphor);
     outline-offset: 2px;
+  }
+
+  /*
+   * The primary action fills from the bottom on hover, rather than swapping
+   * colour outright. Painted with a background-size transition so there is no
+   * extra element and nothing to mispaint over the label. The global
+   * reduced-motion rule below flattens it to an instant change.
+   */
+  .btn-fill {
+    background-image: linear-gradient(
+      to top,
+      var(--color-phosphor-deep) 0%,
+      var(--color-phosphor-deep) 100%
+    );
+    background-repeat: no-repeat;
+    background-position: bottom center;
+    background-size: 100% 0%;
+    transition: background-size 180ms ease-out;
+  }
+  .btn-fill:hover:not(:disabled),
+  .btn-fill:focus-visible:not(:disabled) {
+    background-size: 100% 100%;
   }
 
   @media (prefers-reduced-motion: reduce) {

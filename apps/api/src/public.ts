@@ -95,6 +95,7 @@ pub.get('/s/:id', (c) => {
       requester: row.requester,
       label: row.label,
       purpose: row.purpose,
+      createdAt: row.created_at,
       expiresAt: row.expires_at,
       maxBytes: config.maxSecretBytes,
     }),
