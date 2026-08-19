@@ -1,5 +1,5 @@
 import { type Context, Hono } from 'hono'
-import { rateLimit, requireApiKey } from './auth.js'
+import { requireApiKey } from './auth.js'
 import { config } from './config.js'
 import {
   decryptSecret,
@@ -10,11 +10,16 @@ import {
   sha256,
 } from './crypto.js'
 import { effectiveStatus, queries, type RequestRow } from './db.js'
+import { limitApiByIp, limitApiByKey } from './rate-limit.js'
 
 export const api = new Hono()
 
+// Order matters. The IP limiter runs FIRST so that failed authentication is
+// counted: mounted after requireApiKey, a 401 short-circuits before the counter
+// and API keys can be brute-forced at network speed.
+api.use('*', limitApiByIp)
 api.use('*', requireApiKey)
-api.use('*', rateLimit)
+api.use('*', limitApiByKey)
 
 const MAX_TEXT = { requester: 80, label: 120, purpose: 400 } as const
 

@@ -5,8 +5,14 @@ import { config } from './config.js'
 import { hashIp } from './crypto.js'
 import { effectiveStatus, queries } from './db.js'
 import { renderClosed, renderForm, renderSuccess } from './page.js'
+import { limitPublic } from './rate-limit.js'
 
 export const pub = new Hono()
+
+// These routes were mounted outside the /v1 group and had no limiter at all.
+// Declared before the handlers so it runs ahead of them — in particular ahead of
+// the markOpened counter.
+pub.use('*', limitPublic)
 
 const nonce = () => randomBytes(16).toString('base64')
 

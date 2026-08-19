@@ -13,6 +13,46 @@ export const KEY2 = 'secondary_test_key'
 export const SALT = 'test_salt'
 export const DB = process.env.ATTACK_DB ?? './data/attacks.db'
 
+/**
+ * Boots a second, independently configured server on its own port. Used by
+ * sections that need policy values the shared server deliberately neutralises
+ * (rate limiting, for instance).
+ */
+export async function startServerOn(port, extraEnv = {}) {
+  try { execSync(`fuser -k ${port}/tcp 2>/dev/null || true`) } catch {}
+  await new Promise((r) => setTimeout(r, 300))
+
+  const db = `./data/attacks-${port}.db`
+  mkdirSync('./data', { recursive: true })
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { rmSync(db + suffix) } catch {}
+  }
+
+  const base = `http://localhost:${port}`
+  const proc = spawn('npx', ['tsx', 'src/server.ts'], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      BASE_URL: base,
+      DB_PATH: db,
+      API_KEYS: `${KEY},${KEY2}`,
+      IP_HASH_SALT: SALT,
+      ...extraEnv,
+    },
+    stdio: 'ignore',
+  })
+
+  for (let i = 0; i < 100; i++) {
+    if (proc.exitCode !== null) throw new Error(`server exited (code ${proc.exitCode})`)
+    try {
+      if ((await fetch(`${base}/healthz`)).ok) return { proc, base }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  proc.kill()
+  throw new Error(`server did not start on ${port}`)
+}
+
 export async function startServer(extraEnv = {}) {
   // A forgotten server from a previous run would answer in our place with a
   // different configuration: free the port before anything else.

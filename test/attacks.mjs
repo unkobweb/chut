@@ -6,8 +6,8 @@
  */
 import { statSync } from 'node:fs'
 import {
-  startServer, api, createRequest, fillRequest, concurrentPost, BASE, KEY, DB,
-  check, section, report,
+  startServer, startServerOn, api, createRequest, fillRequest, concurrentPost,
+  BASE, KEY, DB, check, section, report,
 } from './harness.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -226,6 +226,122 @@ section('03 · Confirmation page: no unauthenticated leak, no existence oracle')
     'and it carries nothing about any particular request',
     !genericBody.includes(LABEL) && !genericBody.includes(req.id),
   )
+}
+
+// =============================================================================
+section('04 · Rate limiting must cover failed auth and public routes')
+// =============================================================================
+// The limiter was mounted after requireApiKey and keyed on the API key hash, so a
+// 401 never reached it: API keys could be brute-forced without any throttling.
+// The public /s/:id routes were mounted outside the /v1 group entirely and had no
+// limiter at all — which let an attacker flood opened_count and drown the very
+// signal the agent uses to warn its human about a suspicious link.
+{
+  const LIMIT = 10
+  const burstOn = (base) => (path, opts = {}, n = LIMIT * 4) =>
+    Promise.all(Array.from({ length: n }, () => fetch(base + path, opts).then((r) => r.status)))
+
+  // --- server A: public reads, then failed auth ---------------------------
+  // Order matters here: a saturated /v1 bucket would make the opened_count read
+  // fail with a 429, so the brute-force burst has to come last.
+  const a = await startServerOn(8802, { RATE_LIMIT_PER_MIN: String(LIMIT) })
+  const burstA = burstOn(a.base)
+  try {
+    const created = await (
+      await fetch(`${a.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+
+    const opens = await burstA(`/s/${created.id}`, {}, LIMIT * 6)
+    check(
+      'the public form page is rate limited',
+      opens.filter((s) => s === 429).length > 0,
+      `${opens.filter((s) => s === 200).length} x 200, 0 x 429`,
+    )
+    check(
+      'a throttled response carries Retry-After',
+      opens.includes(429) &&
+        (await fetch(`${a.base}/s/${created.id}`)).headers.get('retry-after') !== null,
+    )
+
+    const state = await (
+      await fetch(`${a.base}/v1/requests/${created.id}`, {
+        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': created.poll_token },
+      })
+    ).json()
+    check(
+      'opened_count cannot be inflated at will',
+      typeof state.opened_count === 'number' && state.opened_count <= LIMIT + 1,
+      `opened_count reached ${state.opened_count} — the tamper signal is drownable`,
+    )
+
+    const badKeys = await burstA(
+      '/v1/requests',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer wrong_key' },
+        body: '{}',
+      },
+      LIMIT * 8,
+    )
+    check(
+      'failed authentication is rate limited',
+      badKeys.filter((s) => s === 429).length > 0,
+      `${badKeys.filter((s) => s === 401).length} x 401, 0 x 429 — unlimited guessing`,
+    )
+  } finally {
+    a.proc.kill()
+  }
+
+  // --- server B: the write endpoint, on a fresh bucket ---------------------
+  // A separate server on purpose: reusing server A, the fill burst would be
+  // rejected by the bucket the read burst already saturated, and the assertion
+  // would pass even if POST were not covered at all.
+  const b = await startServerOn(8803, { RATE_LIMIT_PER_MIN: String(LIMIT) })
+  try {
+    const created = await (
+      await fetch(`${b.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+    const fills = await burstOn(b.base)(`/s/${created.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ciphertext: 'AAAA', iv: 'AAAAAAAAAAAAAAAA' }),
+    })
+    check(
+      'the public fill endpoint is rate limited',
+      fills.filter((s) => s === 429).length > 0,
+      'no 429 across a burst of fills',
+    )
+  } finally {
+    b.proc.kill()
+  }
+
+  // --- server C: ordinary traffic must not notice any of this --------------
+  const c = await startServerOn(8804, { RATE_LIMIT_PER_MIN: '1000' })
+  try {
+    const req = await (
+      await fetch(`${c.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+    const page = await fetch(`${c.base}/s/${req.id}`)
+    check('normal traffic is untouched by the limiter', page.status === 200, `got ${page.status}`)
+    const poll = await fetch(`${c.base}/v1/requests/${req.id}`, {
+      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
+    })
+    check('and polling still works', poll.status === 200, `got ${poll.status}`)
+  } finally {
+    c.proc.kill()
+  }
 }
 
 report(proc)
