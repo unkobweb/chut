@@ -936,4 +936,110 @@ section('10 · Malformed bodies must never reach the error handler')
   }
 }
 
+// =============================================================================
+section('11 · Invisible Unicode must not reach the page a human reads')
+// =============================================================================
+// escapeHtml covered the five HTML characters and nothing else, so requester,
+// label and purpose reached the page with control and bidi characters intact.
+// That is not XSS - the CSP and the escaping hold. It is worse placed: those
+// three lines are the *only* thing the human reads to decide whether to trust the
+// request. A right-to-left override makes text render in an order it was not
+// written in; zero-width characters hide word boundaries. The attack is on the
+// reader, not the parser, and an agent under prompt injection controls all three
+// fields.
+{
+  const srv = await startServerOn(8813, { RATE_LIMIT_PER_MIN: '1000' })
+  const create = (body) =>
+    fetch(`${srv.base}/v1/requests`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', ...body }),
+    })
+
+  try {
+    // 11.1 - characters that reorder or hide text have no place in a short label
+    const DECEPTIVE = [
+      ['\u202E', 'right-to-left override'],
+      ['\u202D', 'left-to-right override'],
+      ['\u202B', 'right-to-left embedding'],
+      ['\u2066', 'left-to-right isolate'],
+      ['\u2069', 'pop directional isolate'],
+      ['\u200B', 'zero-width space'],
+      ['\u200F', 'right-to-left mark'],
+      ['\uFEFF', 'byte order mark'],
+      ['\u0000', 'null byte'],
+      ['\u2028', 'line separator'],
+      ['\u001B', 'escape'],
+    ]
+
+    for (const [char, name] of DECEPTIVE) {
+      const res = await create({ requester: `Google Support${char} verified` })
+      check(
+        `a ${name} in requester is refused`,
+        res.status === 400,
+        `got ${res.status} - it would render on the page the human reads`,
+      )
+    }
+
+    // The same guard has to cover every field shown on that page.
+    for (const field of ['label', 'purpose']) {
+      const res = await create({ [field]: `Gmail key\u202E harmless` })
+      check(`a bidi override in ${field} is refused too`, res.status === 400, `got ${res.status}`)
+    }
+
+    // Tab, newline and carriage return are real whitespace: HTML collapses them
+    // anyway, so they are normalised rather than refused. Refusing them would be
+    // friction with no security gain.
+    const wrapped = await (await create({ requester: 'Telegram\n\tAssistant' })).json()
+    check(
+      'newlines and tabs are collapsed, not refused',
+      wrapped.requester === 'Telegram Assistant',
+      JSON.stringify(wrapped.requester),
+    )
+
+    // 11.2 - and none of it can reach the rendered page
+    const clean = await (await create({ requester: 'Telegram Assistant' })).json()
+    const page = await (await fetch(`${srv.base}/s/${clean.id}`)).text()
+    check(
+      'the rendered page contains no bidi or zero-width characters',
+      !/[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/.test(page),
+    )
+
+    // 11.3 - legitimate text must keep working. Over-rejecting here would make
+    // the service unusable for most of the world.
+    const LEGITIMATE = [
+      ['Assistant T\u00e9l\u00e9gramme', 'French accents'],
+      ['Cl\u00e9 API \u2014 sauvegarde \u00ab nocturne \u00bb', 'punctuation and quotes'],
+      ['\u{1F510} Vault bot \u{1F468}\u200D\u{1F469}\u200D\u{1F467}', 'emoji, including a ZWJ family sequence'],
+      ['\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0628\u0631\u064A\u062F', 'Arabic'],
+      ['\u06A9\u0644\u06CC\u062F \u0627\u06CC\u200C\u067E\u06CC', 'Persian with zero-width non-joiner'],
+      ['\u30E1\u30FC\u30EB\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8', 'Japanese'],
+      ['\u0410\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442 Telegram', 'Cyrillic'],
+    ]
+    for (const [text, name] of LEGITIMATE) {
+      const res = await create({ requester: text })
+      check(`${name} is accepted`, res.status === 201, `got ${res.status} for "${text}"`)
+    }
+
+    // 11.4 - decomposed characters are normalised, so what is stored is what the
+    // human sees, and the length limit cannot be gamed with combining marks
+    const decomposed = await (await create({ requester: 'Cle\u0301 Assistant' })).json()
+    check(
+      'decomposed characters are normalised to NFC',
+      decomposed.requester === 'Cl\u00e9 Assistant',
+      JSON.stringify(decomposed.requester),
+    )
+
+    // 11.5 - surrounding and repeated whitespace is collapsed rather than kept
+    const spaced = await (await create({ requester: '  Telegram    Assistant  ' })).json()
+    check(
+      'runs of whitespace are collapsed',
+      spaced.requester === 'Telegram Assistant',
+      JSON.stringify(spaced.requester),
+    )
+  } finally {
+    srv.proc.kill()
+  }
+}
+
 report(proc)

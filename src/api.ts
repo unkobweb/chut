@@ -11,6 +11,7 @@ import {
   sha256,
 } from './crypto.js'
 import { effectiveStatus, queries, type RequestRow } from './db.js'
+import { sanitizeDisplayText } from './text.js'
 import { limitApiByIp, limitApiByKey } from './rate-limit.js'
 
 export const api = new Hono()
@@ -60,20 +61,28 @@ api.post('/requests', async (c) => {
   const body = await readJsonObject(c)
   if (body instanceof Response) return body
 
-  const label = typeof body.label === 'string' ? body.label.trim() : ''
-  if (!label) return badRequest(c, 'Field "label" is required (what you are asking for).')
-  if (label.length > MAX_TEXT.label)
-    return badRequest(c, `"label" is limited to ${MAX_TEXT.label} characters.`)
+  // These three are the only text a human reads before deciding to trust the
+  // request, and an agent under prompt injection controls all of them.
+  const readText = (field: 'requester' | 'label' | 'purpose') => {
+    const raw = typeof body[field] === 'string' ? (body[field] as string) : ''
+    const result = sanitizeDisplayText(raw)
+    if (!result.ok) return badRequest(c, `"${field}" ${result.reason}`)
+    if (result.value.length > MAX_TEXT[field])
+      return badRequest(c, `"${field}" is limited to ${MAX_TEXT[field]} characters.`)
+    return result.value
+  }
 
-  const requester = typeof body.requester === 'string' ? body.requester.trim() : ''
+  const label = readText('label')
+  if (typeof label !== 'string') return label
+  if (!label) return badRequest(c, 'Field "label" is required (what you are asking for).')
+
+  const requester = readText('requester')
+  if (typeof requester !== 'string') return requester
   if (!requester)
     return badRequest(c, 'Field "requester" is required (who is asking, as the human sees it).')
-  if (requester.length > MAX_TEXT.requester)
-    return badRequest(c, `"requester" is limited to ${MAX_TEXT.requester} characters.`)
 
-  const purpose = typeof body.purpose === 'string' ? body.purpose.trim() : ''
-  if (purpose.length > MAX_TEXT.purpose)
-    return badRequest(c, `"purpose" is limited to ${MAX_TEXT.purpose} characters.`)
+  const purpose = readText('purpose')
+  if (typeof purpose !== 'string') return purpose
 
   let ttl = config.defaultTtl
   if (body.ttl_seconds !== undefined) {
