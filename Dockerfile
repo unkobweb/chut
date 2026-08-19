@@ -19,6 +19,10 @@ WORKDIR /repo
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
+# apps/api only. packages/mcp is a workspace in the lockfile but its package.json
+# is deliberately left out of the context: npm tolerates the absence, skips its
+# dependencies, and the MCP SDK never ships in the server image. Adding the COPY
+# back is not a fix, it is 3 MB of an SDK this process never loads.
 COPY apps/api/package.json apps/api/
 RUN npm ci --omit=dev && npm cache clean --force
 

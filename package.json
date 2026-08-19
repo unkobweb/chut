@@ -19,6 +19,7 @@
     "test:browser": "npm run test:browser --workspace=@chut/api",
     "smoke": "npm run smoke --workspace=@chut/api --",
     "volume": "npm run volume --workspace=@chut/api --",
-    "link": "npm run link --workspace=@chut/api --"
+    "link": "npm run link --workspace=@chut/api --",
+    "build": "npm run build --workspaces --if-present"
   }
 }

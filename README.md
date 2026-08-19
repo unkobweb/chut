@@ -20,7 +20,7 @@ it in plaintext, and a copy of the database alone is not enough to read it.
 |---|---|
 | [`apps/api`](apps/api) | The service: HTTP API, the page the human fills in, OpenAPI spec |
 | `apps/web` | Landing page and docs — not built yet |
-| `packages/mcp` | MCP server, so agents can call chut as a tool — not built yet |
+| [`packages/mcp`](packages/mcp) | MCP server, so agents can call chut as a tool |
 | [`Dockerfile`](Dockerfile) | At the root on purpose: `apps/api` is a workspace, so the build context has to be the root |
 
 One product, several surfaces. They share an auth model, a threat model and a
