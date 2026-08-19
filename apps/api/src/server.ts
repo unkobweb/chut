@@ -5,7 +5,8 @@ import { api } from './api.js'
 import { IS_INSECURE_DEFAULT, config } from './config.js'
 import { startSweeper } from './db.js'
 import { openapi } from './openapi.js'
-import { renderIndex } from './page.js'
+import { resolveLocale } from './ui/i18n.js'
+import { IndexPage } from './ui/pages.js'
 import { pub } from './public.js'
 
 const app = new Hono()
@@ -26,9 +27,10 @@ app.use('*', async (c, next) => {
 
 app.get('/', (c) => {
   const n = randomBytes(16).toString('base64')
+  const locale = resolveLocale(c.req.header('accept-language'), c.req.query('lang'))
   c.header('Content-Type', 'text/html; charset=utf-8')
   c.header('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${n}'`)
-  return c.body(renderIndex(n))
+  return c.body(IndexPage(n, locale, config.baseUrl))
 })
 
 app.get('/healthz', (c) => c.json({ ok: true, service: 'chut', version: '0.1.0' }))

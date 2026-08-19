@@ -6,3 +6,4 @@ screenshots/
 *.log
 _to_delete/
 .source-archive.tar.gz
+apps/api/src/ui/styles.generated.css

@@ -6,7 +6,8 @@ import { config } from './config.js'
 import { clientAddress } from './client-ip.js'
 import { hashIp } from './crypto.js'
 import { effectiveStatus, queries } from './db.js'
-import { renderClosed, renderForm, renderSuccess } from './page.js'
+import { resolveLocale } from './ui/i18n.js'
+import { ClosedPage, DeliveredPage, FormPage, type ClosedReason } from './ui/pages.js'
 import { limitPublic } from './rate-limit.js'
 import { rejectCrossSite, requireJsonBody } from './same-origin.js'
 
@@ -59,23 +60,13 @@ const IV_MAX_CHARS = 24
  */
 const MAX_BODY_BYTES = config.maxSecretBytes * 3
 
-const CLOSED_COPY: Record<string, { title: string; message: string }> = {
-  filled: {
-    title: 'Already filled',
-    message: 'This link already received a value. A chut link is single-use.',
-  },
-  revealed: {
-    title: 'Already used',
-    message: 'The value was handed to the agent and this link is now inactive.',
-  },
-  expired: {
-    title: 'Link expired',
-    message: 'This link is past its validity window and can no longer receive a value.',
-  },
-  cancelled: {
-    title: 'Request cancelled',
-    message: 'The agent cancelled this request before it was filled.',
-  },
+/**
+ * Language comes from the browser, with ?lang= as an override. The person
+ * reading this page is deciding whether to trust it — doing that in a language
+ * they do not read is what the caution notice is fighting against.
+ */
+function localeOf(c: Context) {
+  return resolveLocale(c.req.header('accept-language'), c.req.query('lang'))
 }
 
 /** The form shown to the human. */
@@ -83,20 +74,12 @@ pub.get('/s/:id', (c) => {
   const n = nonce()
   const row = queries.byId.get(c.req.param('id'))
   if (!row) {
-    return secureHtml(
-      c,
-      renderClosed(n, {
-        title: 'Link not found',
-        message: 'This link does not exist, or it was purged a long time ago.',
-      }),
-      n,
-      404,
-    )
+    return secureHtml(c, ClosedPage(n, localeOf(c), 'notFound'), n, 404)
   }
 
   const status = effectiveStatus(row)
   if (status !== 'pending') {
-    return secureHtml(c, renderClosed(n, CLOSED_COPY[status]!), n, 410)
+    return secureHtml(c, ClosedPage(n, localeOf(c), status as ClosedReason), n, 410)
   }
 
   // A fetch, not necessarily a human: this is also what a link-preview crawler
@@ -105,7 +88,9 @@ pub.get('/s/:id', (c) => {
 
   return secureHtml(
     c,
-    renderForm(n, {
+    FormPage({
+      nonce: n,
+      locale: localeOf(c),
       id: row.id,
       requester: row.requester,
       label: row.label,
@@ -141,7 +126,7 @@ pub.post(
     const status = effectiveStatus(row)
     if (status !== 'pending') {
       return c.json(
-        { error: 'not_pending', status, message: CLOSED_COPY[status]?.message ?? 'Inactive link.' },
+        { error: 'not_pending', status, message: 'This link is no longer accepting a value.' },
         409,
       )
     }
@@ -217,5 +202,15 @@ pub.post('/s/:id/opened', rejectCrossSite, (c) => {
  */
 pub.get('/done', (c) => {
   const n = nonce()
-  return secureHtml(c, renderSuccess(n), n)
+  return secureHtml(c, DeliveredPage(n, localeOf(c)), n)
+})
+
+/**
+ * Shown when the link arrived without its fragment — truncated somewhere between
+ * the agent and the browser. Carries no id, like /done: the page says what
+ * happened without describing any particular request.
+ */
+pub.get('/broken', (c) => {
+  const n = nonce()
+  return secureHtml(c, ClosedPage(n, localeOf(c), 'broken'), n, 410)
 })

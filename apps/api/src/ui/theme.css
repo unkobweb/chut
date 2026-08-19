@@ -1,0 +1,68 @@
+@import "tailwindcss";
+@source "../**/*.tsx";
+@source "../**/*.ts";
+
+/*
+ * Phosphor. Terminal-leaning, but prose is set in a UI face: monospace is for
+ * labels and figures, not for paragraphs a stressed person reads on a phone —
+ * and monospace Arabic and Persian are close to unreadable.
+ *
+ * No @font-face anywhere. This page must render from a single HTTP request,
+ * with no external fetch of any kind.
+ */
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-ink: #e8ece9;
+  --color-dim: #93a099;
+  --color-faint: #6b7a72;
+  --color-surface: #07090a;
+  --color-panel: #0e1211;
+  --color-line: #1e2523;
+  --color-phosphor: #4ade80;
+  --color-deep: #123a25;
+  --color-alarm: #f87171;
+  --color-caution: #e3c264;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  /* Light is not an afterthought: someone opens this outdoors, in daylight. */
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --color-ink: #14201a;
+      --color-dim: #4a5a52;
+      --color-faint: #6f7d76;
+      --color-surface: #f4f2ed;
+      --color-panel: #fbfaf7;
+      --color-line: #dcd9d1;
+      --color-phosphor: #0f6636;
+      --color-deep: #dcecdf;
+      --color-alarm: #b4342f;
+      --color-caution: #7a5c12;
+    }
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  /* Never remove the ring: this page has no second route to its action. */
+  :focus-visible {
+    outline: 2px solid var(--color-phosphor);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

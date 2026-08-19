@@ -63,10 +63,19 @@ console.log('\n\x1b[1mPage rendering\x1b[0m')
 await page.goto(created.url, { waitUntil: 'networkidle' })
 await page.screenshot({ path: `${OUT}/1-form.png`, fullPage: true })
 
-check('title is visible', (await page.textContent('h1')).includes('Gmail API key'))
+check('the page has a document heading', (await page.textContent('h1')).length > 20)
+check(
+  'the request panel names what is being asked for',
+  (await page.content()).includes('Gmail API key'),
+)
+check(
+  'and says the page cannot verify it',
+  (await page.content()).includes('cannot verify'),
+)
 check('purpose is shown', (await page.content()).includes('summary every morning'))
 const countdown = await page.textContent('#countdown')
-check('countdown is running', /min|s/.test(countdown), countdown)
+// The countdown now renders as m:ss in tabular figures, terminal style.
+check('countdown is running', /^\d+:\d{2}$/.test(countdown.trim()), countdown)
 check('no JS error on load', pageErrors.length === 0, pageErrors.join(' | '))
 check('no CSP violation', cspViolations.length === 0, cspViolations.join(' | '))
 
@@ -161,7 +170,7 @@ console.log('\n\x1b[1mCross-site arrival\x1b[0m')
 
     check(
       'a cross-site click still reaches the form',
-      (await visitor.textContent('h1')).includes('Stripe key'),
+      (await visitor.content()).includes('Stripe key'),
       visitor.url(),
     )
 

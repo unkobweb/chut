@@ -6,6 +6,8 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY tsconfig.json ./
 COPY src ./src
+# The stylesheet is generated, not committed: build it into the image.
+RUN npx @tailwindcss/cli -i src/ui/theme.css -o src/ui/styles.generated.css --minify
 
 FROM node:22-slim AS runtime
 WORKDIR /app
