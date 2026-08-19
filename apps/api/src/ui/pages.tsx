@@ -14,10 +14,10 @@ const LABEL = 'font-mono text-[13px] text-faint'
 
 /** Width of the expiry bar, in characters. Sixteen, as the mockups drew it. */
 const BAR_CELLS = 16
-const PANEL = 'rounded-lg border border-line bg-panel'
+const PANEL = 'border border-line bg-panel'
 
 function Card({ children }: { children: Child }) {
-  return <div class="w-full rounded-xl border border-line bg-panel p-5 sm:p-7">{children}</div>
+  return <div class="w-full border border-line bg-panel p-5 sm:p-7">{children}</div>
 }
 
 /**
@@ -165,7 +165,7 @@ export function FormPage(props: {
           * page that shouts is a page that reads as a scam. This has to be
           * noticed and read, not obeyed in a panic.
           */}
-        <p class="mb-5 rounded-lg bg-deep/50 px-4 py-3 text-[13.5px] leading-snug text-dim">
+        <p class="mb-5 bg-deep/50 px-4 py-3 text-[13.5px] leading-snug text-dim">
           {t.caution}
         </p>
 
@@ -193,7 +193,7 @@ export function FormPage(props: {
             autocorrect="off"
             autocomplete="off"
             aria-describedby="field-note"
-            class="w-full resize-y rounded-lg border border-line bg-surface p-3 font-mono text-sm text-ink placeholder:text-faint"
+            class="w-full resize-y border border-line bg-surface p-3 font-mono text-sm text-ink placeholder:text-faint"
             placeholder="············"
           />
 
@@ -201,13 +201,13 @@ export function FormPage(props: {
             id="error"
             role="alert"
             hidden
-            class="mt-3 rounded-lg border border-alarm/30 bg-alarm/10 p-3 text-sm text-alarm"
+            class="mt-3 border border-alarm/30 bg-alarm/10 p-3 text-sm text-alarm"
           />
 
           <button
             type="submit"
             id="submit"
-            class="mt-4 w-full rounded-lg bg-phosphor px-4 py-3 font-mono text-sm font-bold tracking-wide text-surface uppercase disabled:opacity-50"
+            class="mt-4 w-full bg-phosphor px-4 py-3 font-mono text-sm font-bold tracking-wide text-surface uppercase disabled:opacity-50"
           >
             {t.submit}
           </button>
@@ -258,7 +258,7 @@ function TerminalPage(props: {
         <Header locale={props.locale} />
         <div class="py-4 text-center">
           <div
-            class={`mx-auto mb-5 flex h-11 w-16 items-center justify-center rounded border font-mono text-sm ${border}`}
+            class={`mx-auto mb-5 flex h-11 w-16 items-center justify-center border font-mono text-sm ${border}`}
             aria-hidden="true"
           >
             {props.glyph}
