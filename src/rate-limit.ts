@@ -1,17 +1,14 @@
-import { getConnInfo } from '@hono/node-server/conninfo'
 import type { Context, Next } from 'hono'
+import { clientAddress } from './client-ip.js'
 import { config } from './config.js'
 
 /**
  * Fixed-window counters, in memory.
  *
- * Deliberately not keyed on anything the caller controls. The peer address comes
- * from the TCP socket, not from a header: an attacker cannot rotate it by sending
- * a different X-Forwarded-For.
- *
- * Known limitation: behind a reverse proxy every request shares the proxy's
- * address, so the per-IP buckets collapse into one. Configuring a trusted proxy
- * hop count is handled separately, together with the forgeable filled_ip_hash.
+ * Deliberately not keyed on anything the caller controls. The address comes from
+ * the TCP socket, or from the forwarding chain only as far as TRUST_PROXY_HOPS
+ * says it may be believed — so an attacker cannot mint a fresh bucket per request
+ * by rotating X-Forwarded-For.
  *
  * Also in-memory: counters reset on restart and are not shared across instances.
  * That is acceptable for a single-container deployment and wants Redis beyond it.
@@ -23,21 +20,12 @@ setInterval(() => {
   for (const [key, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(key)
 }, 300_000).unref()
 
-/** The TCP peer address. Unspoofable, unlike any header. */
-export function peerAddress(c: Context): string {
-  try {
-    return getConnInfo(c).remote.address ?? 'unknown'
-  } catch {
-    return 'unknown'
-  }
-}
-
 interface RateLimitOptions {
   /** Namespace, so two limiters never share a bucket. */
   scope: string
   max: number
   windowMs?: number
-  /** Defaults to the peer address. */
+  /** Defaults to the resolved client address. */
   keyOf?: (c: Context) => string
   message: string
 }
@@ -46,7 +34,7 @@ export function createRateLimit({
   scope,
   max,
   windowMs = 60_000,
-  keyOf = (c) => `ip:${peerAddress(c)}`,
+  keyOf = (c) => `ip:${clientAddress(c)}`,
   message,
 }: RateLimitOptions) {
   return async function rateLimitMiddleware(c: Context, next: Next) {

@@ -17,6 +17,15 @@ function envInt(name: string, fallback: number): number {
   return n
 }
 
+/** Like envInt, but zero is a legitimate value here. */
+function envIntFromZero(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${name} must be zero or a positive integer`)
+  return n
+}
+
 const apiKeys = env('API_KEYS', 'dev_change_me')
   .split(',')
   .map((k) => k.trim())
@@ -38,6 +47,12 @@ export const config = {
   maxSecretBytes: envInt('MAX_SECRET_BYTES', 8_192),
   rateLimitPerMin: envInt('RATE_LIMIT_PER_MIN', 60),
   ipHashSalt: env('IP_HASH_SALT', 'change_me_too'),
+  /**
+   * Number of trusted proxies in front of this service. 0 means forwarding
+   * headers are ignored entirely, which is the only safe default: believing
+   * X-Forwarded-For when nothing sets it lets any caller pick their own address.
+   */
+  trustProxyHops: envIntFromZero('TRUST_PROXY_HOPS', 0),
 } as const
 
 export const IS_INSECURE_DEFAULT =

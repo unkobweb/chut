@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { type Context, Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { config } from './config.js'
+import { clientAddress } from './client-ip.js'
 import { hashIp } from './crypto.js'
 import { effectiveStatus, queries } from './db.js'
 import { renderClosed, renderForm, renderSuccess } from './page.js'
@@ -35,12 +36,6 @@ function secureHtml(c: Context, html: string, n: string, status: 200 | 404 | 410
     ].join('; '),
   )
   return c.body(html, status)
-}
-
-function clientIp(c: Context): string {
-  const xff = c.req.header('x-forwarded-for')
-  if (xff) return xff.split(',')[0]!.trim()
-  return c.req.header('x-real-ip') ?? 'unknown'
 }
 
 /**
@@ -178,7 +173,7 @@ pub.post(
       ciphertext,
       iv,
       now: Date.now(),
-      ip_hash: hashIp(clientIp(c), config.ipHashSalt),
+      ip_hash: hashIp(clientAddress(c), config.ipHashSalt),
       user_agent: (c.req.header('user-agent') ?? '').slice(0, 200) || null,
     })
 

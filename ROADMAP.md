@@ -12,14 +12,16 @@ Translations live as plain objects (no framework); the agent may also pin a loca
 at creation time via a `locale` field, since it usually knows its human's language.
 
 ### Close the remaining audit findings
-An adversarial review found 11 issues; #1 (reveal race) is fixed. Remaining:
-unbounded `iv` field, unauthenticated `/done` leaking the label, rate limiting that
-covers neither failed auth nor public routes, `burn_on_reveal` failing open on
-non-boolean input, spoofable `X-Forwarded-For`, `poll_token` accepted in the query
-string, link-preview bots inflating `opened_count`, CSRF on the fill endpoint,
-`null` body causing a 500, and unfiltered Unicode control characters.
+An adversarial review found 11 issues. Each gets a failing test first, then the fix.
 
-Each one gets a failing test first, then the fix.
+Closed: reveal race, unbounded `iv` and request body, unauthenticated `/done`
+leaking the label, rate limiting that covered neither failed auth nor the public
+routes, `burn_on_reveal` failing open on non-boolean input, and blindly trusted
+forwarding headers.
+
+Open: `poll_token` accepted in the query string, link-preview bots inflating
+`opened_count`, CSRF on the fill endpoint, a `null` body causing a 500, and
+unfiltered Unicode control characters in agent-supplied text.
 
 ## Later
 

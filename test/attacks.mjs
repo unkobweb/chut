@@ -5,10 +5,15 @@
  * Usage: node test/attacks.mjs
  */
 import { statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import {
   startServer, startServerOn, api, createRequest, fillRequest, concurrentPost,
-  BASE, KEY, DB, check, section, report,
+  BASE, KEY, DB, SALT, check, section, report,
 } from './harness.mjs'
+
+/** Mirrors hashIp() server-side: sha256(salt:ip), truncated. */
+const expectedIpHash = (ip) =>
+  createHash('sha256').update(`${SALT}:${ip}`).digest('hex').slice(0, 16)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -408,6 +413,126 @@ section('05 · burn_on_reveal must never fail open')
     'and the secret stays readable until expiry',
     secondKeep.status === 200 && (await secondKeep.json()).secret === 'sk-should-persist',
   )
+}
+
+// =============================================================================
+section('06 · X-Forwarded-For must not be believed by default')
+// =============================================================================
+// filled_from_ip_hash is half of the tamper detection: the agent surfaces it so
+// its human can notice a fill coming from somewhere unexpected. It was derived
+// from X-Forwarded-For with no notion of a trusted proxy, so the person filling
+// the slot chose the address that would be shown to the very human they were
+// impersonating. Evidence written by the party it is supposed to incriminate.
+{
+  const fillWithHeaders = async (base, headers) => {
+    const created = await (
+      await fetch(`${base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+    await fetch(`${base}/s/${created.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ ciphertext: 'AAAAAAAAAAAA', iv: 'AAAAAAAAAAAAAAAA' }),
+    })
+    const state = await (
+      await fetch(`${base}/v1/requests/${created.id}`, {
+        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': created.poll_token },
+      })
+    ).json()
+    return state.filled_from_ip_hash
+  }
+
+  // --- default posture: no proxy, the header is worthless -------------------
+  const direct = await startServerOn(8805, { RATE_LIMIT_PER_MIN: '1000' })
+  try {
+    const forged = await fillWithHeaders(direct.base, { 'x-forwarded-for': '8.8.8.8' })
+    const forgedTwice = await fillWithHeaders(direct.base, { 'x-forwarded-for': '1.2.3.4' })
+    const honest = await fillWithHeaders(direct.base, {})
+
+    check(
+      'a forged X-Forwarded-For does not become the recorded address',
+      forged !== expectedIpHash('8.8.8.8'),
+      'the attacker picked the address shown to the human',
+    )
+    check(
+      'two forged headers from the same machine yield the same fingerprint',
+      forged === forgedTwice && forged === honest,
+      `got ${forged}, ${forgedTwice}, ${honest} — the fingerprint follows the header`,
+    )
+    check('a fingerprint is still recorded', typeof honest === 'string' && honest.length === 16)
+
+    // X-Real-IP is the same class of claim and must not be believed either.
+    const realIpForged = await fillWithHeaders(direct.base, { 'x-real-ip': '8.8.8.8' })
+    check(
+      'X-Real-IP is not believed either',
+      realIpForged !== expectedIpHash('8.8.8.8'),
+    )
+  } finally {
+    direct.proc.kill()
+  }
+
+  // --- behind one trusted proxy: the header is used, but only as far as told -
+  const proxied = await startServerOn(8806, {
+    RATE_LIMIT_PER_MIN: '1000',
+    TRUST_PROXY_HOPS: '1',
+  })
+  try {
+    const client = await fillWithHeaders(proxied.base, { 'x-forwarded-for': '203.0.113.7' })
+    check(
+      'with one trusted hop, the forwarded client address is honoured',
+      client === expectedIpHash('203.0.113.7'),
+      `got ${client}, expected ${expectedIpHash('203.0.113.7')}`,
+    )
+
+    // The client controls what it sends; the proxy appends the address it saw.
+    // Entries the client prepended must be discarded, not read as the origin.
+    const prepended = await fillWithHeaders(proxied.base, {
+      'x-forwarded-for': '9.9.9.9, 203.0.113.7',
+    })
+    check(
+      'entries prepended by the client are ignored',
+      prepended === expectedIpHash('203.0.113.7'),
+      `got ${prepended} — the client-injected entry was read as the origin`,
+    )
+
+    // A chain shorter than the configured trust means something is off.
+    // Falling back to the socket is the safe answer, never a client-supplied value.
+    const empty = await fillWithHeaders(proxied.base, { 'x-forwarded-for': '' })
+    check(
+      'a missing chain falls back to the socket address',
+      empty !== expectedIpHash('') && typeof empty === 'string',
+    )
+  } finally {
+    proxied.proc.kill()
+  }
+
+  // --- the rate limiter must not be evadable by rotating the header ----------
+  const limited = await startServerOn(8807, { RATE_LIMIT_PER_MIN: '10' })
+  try {
+    const statuses = await Promise.all(
+      Array.from({ length: 60 }, (_, i) =>
+        fetch(`${limited.base}/v1/requests`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer wrong_key',
+            'x-forwarded-for': `10.0.0.${i}`,
+          },
+          body: '{}',
+        }).then((r) => r.status),
+      ),
+    )
+    check(
+      'rotating X-Forwarded-For does not hand out fresh rate-limit buckets',
+      statuses.filter((s) => s === 429).length > 0,
+      'every request got its own bucket by changing a header',
+    )
+  } finally {
+    limited.proc.kill()
+  }
 }
 
 report(proc)

@@ -211,6 +211,7 @@ closed.
 | `MAX_SECRET_BYTES` | `8192` | Maximum value size |
 | `RATE_LIMIT_PER_MIN` | `60` | Requests per minute per API key |
 | `IP_HASH_SALT` | — | Salt for hashing IPs (raw IPs are never stored) |
+| `TRUST_PROXY_HOPS` | `0` | Number of trusted reverse proxies in front. `0` ignores forwarding headers |
 
 A sweep every 30 s wipes the ciphertext of expired requests and permanently deletes
 rows that finished more than 7 days ago.
@@ -229,8 +230,14 @@ docker run -d --name chut -p 8787:8787 \
   chut
 ```
 
-Put it behind a TLS-terminating reverse proxy. Forward `X-Forwarded-For` so the
-filling IP fingerprint stays meaningful.
+Put it behind a TLS-terminating reverse proxy, and set `TRUST_PROXY_HOPS` to the
+number of proxies in front of it — one for a single nginx or Caddy, two if a CDN
+sits ahead of that.
+
+Getting this wrong fails in one direction or the other. Too low and every caller
+shares the proxy's address: rate-limit buckets collapse into one and the filling
+fingerprint is identical for everyone. Too high and you read an entry the client
+wrote itself, which is exactly the hole this setting closes.
 
 ---
 
