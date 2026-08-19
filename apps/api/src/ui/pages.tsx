@@ -45,39 +45,26 @@ function Header({ locale, right, tagline = false }: { locale: Locale; right?: Ch
  * screen reader hears time running out rather than only seeing it.
  */
 /**
- * The countdown, with the bar the mockups drew.
- *
- * It sits at the foot of the ready state and moves to the header once the value
- * is on its way. That is deliberate: no clock ticking in someone's face while
- * they are deciding whether to trust the request, and a visible one once they
- * have committed and are waiting.
+ * Sits in the header, right-aligned: label above, then the figure with the bar
+ * beside it. Being up here rather than at the foot means it is the first thing
+ * seen and the last thing scrolled past, and it frees the bottom of the card.
  */
 function Countdown({ locale }: { locale: Locale }) {
   return (
-    <div id="countdown-block" class="mt-4 flex items-baseline gap-3">
-      <span class="font-mono text-[13px] whitespace-nowrap text-faint">
-        {locale.t.expires}{' '}
-        <span id="countdown" aria-live="polite" class="tabular-nums text-dim">
+    <div class="shrink-0 text-end">
+      <p class={LABEL}>{locale.t.expires}</p>
+      <p class="flex items-center justify-end gap-2">
+        <span id="countdown" aria-live="polite" class="font-mono text-[15px] tabular-nums text-ink">
           —
         </span>
-      </span>
-      {/*
-        * A run of block characters, as drawn — not a CSS bar.
-        *
-        * The multi-line ASCII logo had to go because every line had to align with
-        * the ones above it, and any font substitution destroyed the shape. A
-        * single row of identical characters has no alignment to lose, and U+2593
-        * and U+2591 come from DOS consoles: about as universally present as a
-        * glyph gets. Decorative, so hidden from screen readers — the countdown
-        * beside it already announces the time.
-        */}
-      <span
-        id="countdown-bar"
-        aria-hidden="true"
-        class="font-mono text-[13px] leading-none tracking-tighter whitespace-nowrap text-phosphor"
-      >
-        {'\u2593'.repeat(BAR_CELLS)}
-      </span>
+        <span
+          id="countdown-bar"
+          aria-hidden="true"
+          class="font-mono text-[11px] leading-none tracking-tighter whitespace-nowrap text-phosphor max-[359px]:hidden"
+        >
+          {'\u2593'.repeat(BAR_CELLS)}
+        </span>
+      </p>
     </div>
   )
 }
@@ -123,8 +110,7 @@ export function FormPage(props: {
   return render(
     <Layout title={`${props.requester} — ${props.label}`} nonce={nonce} locale={locale} script={CLIENT_SCRIPT.replace('__CONFIG__', config)}>
       <Card>
-        {/* Empty on purpose: the countdown moves in here once the value is sent. */}
-        <Header locale={locale} right={<div id="header-slot" class="w-28 shrink-0" />} />
+        <Header locale={locale} right={<Countdown locale={locale} />} />
 
         {/*
           * The document heading. It states what is happening rather than
@@ -234,8 +220,6 @@ export function FormPage(props: {
           <p>{t.noteEncrypted}</p>
           <p>{t.noteSingleUse}</p>
         </div>
-
-        <Countdown locale={locale} />
       </Card>
     </Layout>,
   )
@@ -475,17 +459,6 @@ const CLIENT_SCRIPT = `
     submit.disabled = true;
     submit.textContent = CFG.t.encrypting;
     progress.hidden = false;
-
-    // Committed now, so the clock moves up into view. Moved rather than
-    // duplicated: two elements sharing an id is invalid, and getElementById
-    // would silently drive only the first one.
-    var slot = document.getElementById('header-slot');
-    var block = document.getElementById('countdown-block');
-    if (slot && block) {
-      block.classList.remove('mt-5');
-      block.classList.add('text-xs');
-      slot.appendChild(block);
-    }
 
     var iv = crypto.getRandomValues(new Uint8Array(12));
     crypto.subtle.importKey('raw', keyBytes(rawKey), { name: 'AES-GCM' }, false, ['encrypt'])

@@ -80,7 +80,7 @@ const en: Messages = {
   keepOpen: 'Keep this tab open for a moment. The unscrambled secret never leaves this page.',
   noteEncrypted: 'Scrambled in your browser — the server only stores text it cannot read.',
   noteSingleUse: 'One value, once — then this link is dead.',
-  expires: 'expires',
+  expires: 'expires in',
   expired: 'expired',
   errorEmpty: 'The field is empty.',
   errorTooLong: 'That is too long to send (limit {max} bytes).',
