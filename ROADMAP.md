@@ -2,7 +2,20 @@
 
 ## Next up
 
-### i18n for the human-facing page
+### RTL has never been exercised
+The layout mirrors for Arabic, Persian and Hebrew, and the mockups showed it
+working — but no Arabic translation shipped, so nothing has actually rendered
+right to left outside a design file. The first RTL language added is also a test
+of code nobody has run.
+
+### ~~i18n for the human-facing page~~ — done for four languages
+English, French, Spanish and German. Only the English has been read by anyone;
+`REVIEW` in `i18n.ts` records that rather than letting it be assumed. Adding a
+language is one entry in `MESSAGES`, and the `Messages` interface makes a missing
+string a compile error — but a *stale* one is invisible, so walk `REVIEW` when the
+English changes.
+
+### superseded — original i18n plan
 The form is the only screen a non-technical person ever sees, and it is the screen
 where they decide whether to trust the request. Showing it in a language they do
 not read defeats the purpose of the warning box.
