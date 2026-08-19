@@ -993,4 +993,86 @@ section('11 · Invisible Unicode must not reach the page a human reads')
   }
 }
 
+// =============================================================================
+section('12 · HSTS, and only where it belongs')
+// =============================================================================
+// Nothing told the browser to refuse plain HTTP for this domain, so the first
+// visit after a fresh install - or any http:// link that reaches a human - was
+// downgradeable. This page carries a credential in plaintext in the DOM, which
+// makes that the one downgrade worth closing.
+//
+// The inverse matters just as much. An HSTS header served from localhost pins
+// https for localhost in the browser's own store, for the whole max-age, across
+// every port and every unrelated project on that machine. It cannot be cleared
+// by clearing the site's data. Shipping the header unconditionally would trade
+// one production hole for a footgun in every developer's browser.
+{
+  const secure = await startServerOn(8810, { BASE_URL: 'https://chut.example.com' })
+  try {
+    const created = await (
+      await fetch(`${secure.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
+    ).json()
+
+    const page = await fetch(`${secure.base}/s/${created.id}`)
+    const hstsPage = page.headers.get('strict-transport-security')
+    check(
+      'the page a human fills in carries HSTS',
+      typeof hstsPage === 'string' && /max-age=\d+/.test(hstsPage),
+      `got ${hstsPage}`,
+    )
+    check(
+      'the max-age is a year, not a token value',
+      Number(/max-age=(\d+)/.exec(hstsPage ?? '')?.[1] ?? 0) >= 31_536_000,
+      `got ${hstsPage}`,
+    )
+    check(
+      'subdomains are covered',
+      (hstsPage ?? '').includes('includeSubDomains'),
+      `got ${hstsPage}`,
+    )
+
+    const health = await fetch(`${secure.base}/healthz`)
+    check(
+      'the API carries it too, not only the HTML',
+      typeof health.headers.get('strict-transport-security') === 'string',
+      'a downgrade against the agent-facing endpoints is still a downgrade',
+    )
+
+    const missing = await fetch(`${secure.base}/s/definitelynotarealid`)
+    check(
+      'even a 404 carries it',
+      typeof missing.headers.get('strict-transport-security') === 'string',
+      'an error response is a response the attacker can force',
+    )
+  } finally {
+    secure.proc.kill()
+  }
+
+  // BASE_URL is http:// here, which is what every local run looks like.
+  const local = await startServerOn(8811)
+  try {
+    const created = await (
+      await fetch(`${local.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
+    ).json()
+    const page = await fetch(`${local.base}/s/${created.id}`)
+    check(
+      'a plain-HTTP deployment sends no HSTS at all',
+      page.headers.get('strict-transport-security') === null,
+      'localhost would be pinned to https for a year, in every project on the machine',
+    )
+    check(
+      'and neither does its API',
+      (await fetch(`${local.base}/healthz`)).headers.get('strict-transport-security') === null,
+    )
+  } finally {
+    local.proc.kill()
+  }
+}
+
 report(proc)

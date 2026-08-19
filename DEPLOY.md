@@ -16,6 +16,10 @@ container and one persistent volume — no database server, no cache, no queue.
 The container runs as an unprivileged user and owns `/app/data`. Everything else
 in the image is read-only in practice.
 
+HSTS is sent by the application itself, but only when `BASE_URL` starts with
+`https://` — so a local run never pins `localhost` to https in your browser.
+There is nothing to configure at the proxy for it.
+
 ## Environment
 
 | Variable | Set it to | Why |

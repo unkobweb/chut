@@ -26,6 +26,34 @@ app.use('*', async (c, next) => {
   console.log(`${c.req.method} ${path} ${c.res.status} ${Date.now() - started}ms`)
 })
 
+/**
+ * HSTS, conditional on this deployment actually being served over TLS.
+ *
+ * The page a human lands on holds a credential in plaintext in its DOM for as
+ * long as they are typing it, so a downgrade to plain HTTP is the one network
+ * attack worth closing outright rather than mitigating.
+ *
+ * The condition is not caution, it is a hard requirement. A browser that sees
+ * this header from localhost pins https for `localhost` in its own HSTS store,
+ * for the whole max-age, across every port and every unrelated project on that
+ * machine — and clearing the site's data does not clear it. Sending it
+ * unconditionally would trade a production hole for a footgun in the browser of
+ * everyone who ever runs this locally.
+ *
+ * `preload` is deliberately absent: it is a submission to a list baked into
+ * browser binaries, and removing an entry takes months. The links this service
+ * hands out are always https because they are built from BASE_URL, so the
+ * first-visit gap preload closes is already narrow here.
+ */
+const HSTS = config.baseUrl.startsWith('https://') ? 'max-age=31536000; includeSubDomains' : null
+
+if (HSTS) {
+  app.use('*', async (c, next) => {
+    await next()
+    c.header('Strict-Transport-Security', HSTS)
+  })
+}
+
 app.get('/', (c) => {
   const n = randomBytes(16).toString('base64')
   const locale = resolveLocale(c.req.header('accept-language'), c.req.query('lang'))
