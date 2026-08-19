@@ -2,28 +2,20 @@
   "name": "chut",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "description": "Un agent IA demande un secret a son humain via un lien ephemere. Le serveur ne voit jamais le secret en clair.",
+  "description": "An AI agent asks its human for a secret through a short-lived, browser-encrypted link.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "test": "node test/e2e.mjs"
-  },
-  "dependencies": {
-    "@hono/node-server": "^1.13.7",
-    "better-sqlite3": "^11.7.0",
-    "hono": "^4.6.14"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.2",
-    "playwright": "^1.62.1",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "dev": "npm run dev --workspace=@chut/api",
+    "start": "npm run start --workspace=@chut/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:attacks": "npm run test:attacks --workspace=@chut/api",
+    "test:browser": "npm run test:browser --workspace=@chut/api"
   }
 }

@@ -1,0 +1,31 @@
+{
+  "name": "@chut/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "chut secret-request service: API, human-facing page, OpenAPI spec.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/e2e.mjs",
+    "test:attacks": "node test/attacks.mjs",
+    "test:browser": "node test/browser.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "better-sqlite3": "^11.7.0",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "playwright": "^1.62.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

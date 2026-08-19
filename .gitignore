@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/
+screenshots/
 .env
 *.log
 _to_delete/
