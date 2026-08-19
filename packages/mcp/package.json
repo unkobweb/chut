@@ -1,16 +1,23 @@
 {
-  "name": "@chut/mcp",
+  "name": "chut-mcp",
   "version": "0.1.0",
   "description": "MCP server for chut: let an AI agent ask its human for a secret through a short-lived, browser-encrypted link.",
+  "keywords": ["mcp", "modelcontextprotocol", "secrets", "credentials", "api-key", "agent", "ai"],
+  "homepage": "https://chut.sh",
+  "repository": { "type": "git", "url": "git+https://github.com/unkobweb/chut.git", "directory": "packages/mcp" },
+  "bugs": "https://github.com/unkobweb/chut/issues",
+  "license": "MIT",
   "type": "module",
   "bin": { "chut-mcp": "dist/server.js" },
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/server.ts",
-    "test": "node test/protocol.mjs"
+    "test": "node test/protocol.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

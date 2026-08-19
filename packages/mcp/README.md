@@ -1,4 +1,4 @@
-# @chut/mcp
+# chut-mcp
 
 An MCP server that lets an AI agent ask its human for a credential without the
 credential ever being typed into a conversation.
@@ -9,12 +9,12 @@ at the moment it needs it, and the server destroys it.
 
 ## Install
 
-Nothing to install ahead of time — the entries below run it on demand.
+Nothing to install ahead of time — `npx` fetches it on first use.
 
 **Claude Code**
 
 ```bash
-claude mcp add chut -- npx -y @chut/mcp
+claude mcp add chut -- npx -y chut-mcp
 ```
 
 **Claude Desktop** — `claude_desktop_config.json`:
@@ -22,7 +22,7 @@ claude mcp add chut -- npx -y @chut/mcp
 ```json
 {
   "mcpServers": {
-    "chut": { "command": "npx", "args": ["-y", "@chut/mcp"] }
+    "chut": { "command": "npx", "args": ["-y", "chut-mcp"] }
   }
 }
 ```
@@ -36,7 +36,7 @@ Point it at your own instance with `CHUT_URL`:
   "mcpServers": {
     "chut": {
       "command": "npx",
-      "args": ["-y", "@chut/mcp"],
+      "args": ["-y", "chut-mcp"],
       "env": { "CHUT_URL": "https://chut.example.com" }
     }
   }
