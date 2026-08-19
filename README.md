@@ -45,6 +45,13 @@ npm run test:attacks   # one case per audit finding
 npm run test:browser   # the whole journey in a real Chromium
 ```
 
+Try it the way a human would, without writing any HTTP by hand:
+
+```bash
+npm run link                 # create a link, then wait and show what arrives
+npm run link -- --all        # one link per page state, to check them visually
+```
+
 ## Security
 
 The threat model — what is protected, what is not, and why — lives in

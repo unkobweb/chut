@@ -134,6 +134,25 @@ secret readable until it expires.
 
 ---
 
+## Trying it by hand
+
+```bash
+npm run link                 # create a link, then wait and show what arrives
+npm run link -- --all        # one link per page state, to check them visually
+npm run link -- --lang fr    # force an interface language
+```
+
+`npm run link` prints a URL, then watches it. Open it the way your human would,
+paste something, and the terminal shows the value arriving along with
+`opened_count`, the filling fingerprint, and whether the secret was burned — the
+whole round trip without writing a single HTTP call.
+
+`--all` prints one link per state (ready, already used, withdrawn, expiring,
+incomplete, not found, delivered, broken, index), which is the quickest way to
+look over every screen after changing the page.
+
+Customise with `--requester`, `--label`, `--purpose` and `--ttl`.
+
 ## Wiring an agent
 
 The spec is served at `/openapi.json` and written to be loaded as-is as a tool

@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:attacks": "npm run test:attacks --workspace=@chut/api",
-    "test:browser": "npm run test:browser --workspace=@chut/api"
+    "test:browser": "npm run test:browser --workspace=@chut/api",
+    "link": "npm run link --workspace=@chut/api --"
   }
 }
