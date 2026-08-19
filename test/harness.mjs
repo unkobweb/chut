@@ -11,7 +11,7 @@ export const BASE = `http://localhost:${PORT}`
 export const KEY = 'primary_test_key'
 export const KEY2 = 'secondary_test_key'
 export const SALT = 'test_salt'
-const DB = process.env.ATTACK_DB ?? './data/attacks.db'
+export const DB = process.env.ATTACK_DB ?? './data/attacks.db'
 
 export async function startServer(extraEnv = {}) {
   // A forgotten server from a previous run would answer in our place with a

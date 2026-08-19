@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { type Context, Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { config } from './config.js'
 import { hashIp } from './crypto.js'
 import { effectiveStatus, queries } from './db.js'
@@ -35,6 +36,25 @@ function clientIp(c: Context): string {
   if (xff) return xff.split(',')[0]!.trim()
   return c.req.header('x-real-ip') ?? 'unknown'
 }
+
+/**
+ * An AES-GCM nonce is 96 bits = 12 bytes = exactly 16 base64 characters. We allow
+ * up to 24 so a client using a 16-byte nonce still works, but no further: without
+ * an upper bound this field accepted megabytes and wrote them straight to SQLite.
+ */
+const IV_MIN_CHARS = 16
+const IV_MAX_CHARS = 24
+
+/**
+ * Hard ceiling on the whole request body, enforced before parsing.
+ * Field-level checks are not enough on their own: `c.req.json()` buffers the
+ * entire body in memory first, so an unbounded body is a denial of service even
+ * if every field is later rejected.
+ *
+ * Budget: base64 inflates by 4/3, GCM adds a 16-byte tag, plus JSON envelope.
+ * Three times the plaintext ceiling leaves comfortable headroom.
+ */
+const MAX_BODY_BYTES = config.maxSecretBytes * 3
 
 const CLOSED_COPY: Record<string, { title: string; message: string }> = {
   filled: {
@@ -94,54 +114,77 @@ pub.get('/s/:id', (c) => {
 })
 
 /** Receives the payload already encrypted by the browser. */
-pub.post('/s/:id', async (c) => {
-  const row = queries.byId.get(c.req.param('id'))
-  if (!row) return c.json({ error: 'not_found', message: 'Link not found.' }, 404)
+pub.post(
+  '/s/:id',
+  bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) =>
+      c.json(
+        {
+          error: 'too_large',
+          message: `Request body exceeds ${MAX_BODY_BYTES} bytes.`,
+        },
+        413,
+      ),
+  }),
+  async (c) => {
+    const row = queries.byId.get(c.req.param('id'))
+    if (!row) return c.json({ error: 'not_found', message: 'Link not found.' }, 404)
 
-  const status = effectiveStatus(row)
-  if (status !== 'pending') {
-    return c.json(
-      { error: 'not_pending', status, message: CLOSED_COPY[status]?.message ?? 'Inactive link.' },
-      409,
-    )
-  }
+    const status = effectiveStatus(row)
+    if (status !== 'pending') {
+      return c.json(
+        { error: 'not_pending', status, message: CLOSED_COPY[status]?.message ?? 'Inactive link.' },
+        409,
+      )
+    }
 
-  let body: { ciphertext?: unknown; iv?: unknown }
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'invalid_request', message: 'Invalid JSON body.' }, 400)
-  }
+    let body: { ciphertext?: unknown; iv?: unknown }
+    try {
+      body = (await c.req.json()) as typeof body
+    } catch {
+      return c.json({ error: 'invalid_request', message: 'Invalid JSON body.' }, 400)
+    }
 
-  const { ciphertext, iv } = body
-  if (typeof ciphertext !== 'string' || typeof iv !== 'string' || !ciphertext || !iv) {
-    return c.json({ error: 'invalid_request', message: '"ciphertext" and "iv" are required.' }, 400)
-  }
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext) || !/^[A-Za-z0-9+/]+={0,2}$/.test(iv)) {
-    return c.json({ error: 'invalid_request', message: 'Base64 encoding expected.' }, 400)
-  }
-  // +~40% for base64 encoding and the GCM authentication tag.
-  if (Buffer.byteLength(ciphertext, 'utf8') > config.maxSecretBytes * 2) {
-    return c.json({ error: 'too_large', message: 'Value too long.' }, 413)
-  }
+    const { ciphertext, iv } = body
+    if (typeof ciphertext !== 'string' || typeof iv !== 'string' || !ciphertext || !iv) {
+      return c.json({ error: 'invalid_request', message: '"ciphertext" and "iv" are required.' }, 400)
+    }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext) || !/^[A-Za-z0-9+/]+={0,2}$/.test(iv)) {
+      return c.json({ error: 'invalid_request', message: 'Base64 encoding expected.' }, 400)
+    }
+    if (iv.length < IV_MIN_CHARS || iv.length > IV_MAX_CHARS) {
+      return c.json(
+        {
+          error: 'invalid_request',
+          message: `"iv" must be ${IV_MIN_CHARS}-${IV_MAX_CHARS} base64 characters (a 12-byte AES-GCM nonce).`,
+        },
+        400,
+      )
+    }
+    // +~40% for base64 encoding and the GCM authentication tag.
+    if (Buffer.byteLength(ciphertext, 'utf8') > config.maxSecretBytes * 2) {
+      return c.json({ error: 'too_large', message: 'Value too long.' }, 413)
+    }
 
-  const info = queries.fill.run({
-    id: row.id,
-    ciphertext,
-    iv,
-    now: Date.now(),
-    ip_hash: hashIp(clientIp(c), config.ipHashSalt),
-    user_agent: (c.req.header('user-agent') ?? '').slice(0, 200) || null,
-  })
+    const info = queries.fill.run({
+      id: row.id,
+      ciphertext,
+      iv,
+      now: Date.now(),
+      ip_hash: hashIp(clientIp(c), config.ipHashSalt),
+      user_agent: (c.req.header('user-agent') ?? '').slice(0, 200) || null,
+    })
 
-  // 0 rows changed = somebody else filled it between our read and our write.
-  if (info.changes === 0) {
-    return c.json({ error: 'not_pending', message: 'This link has just been used.' }, 409)
-  }
+    // 0 rows changed = somebody else filled it between our read and our write.
+    if (info.changes === 0) {
+      return c.json({ error: 'not_pending', message: 'This link has just been used.' }, 409)
+    }
 
-  c.header('Cache-Control', 'no-store')
-  return c.json({ ok: true, id: row.id })
-})
+      c.header('Cache-Control', 'no-store')
+      return c.json({ ok: true, id: row.id })
+  },
+)
 
 /** Confirmation shown after a successful submission. */
 pub.get('/s/:id/done', (c) => {

@@ -4,10 +4,13 @@
  *
  * Usage: node test/attacks.mjs
  */
+import { statSync } from 'node:fs'
 import {
-  startServer, api, createRequest, fillRequest, concurrentPost, KEY,
+  startServer, api, createRequest, fillRequest, concurrentPost, BASE, KEY, DB,
   check, section, report,
 } from './harness.mjs'
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const proc = await startServer()
 
@@ -73,6 +76,83 @@ section('01 · Reveal race: revealing must be atomic')
     body: JSON.stringify({ poll_token: last.poll_token, encryption_key: last.encryption_key }),
   })
   check('a late reveal is refused', late.status === 409, `got ${late.status}`)
+}
+
+// =============================================================================
+section('02 · Unbounded fields: one request must not be able to bloat the database')
+// =============================================================================
+// POST /s/:id is unauthenticated by design — anyone holding the link can fill it.
+// So every byte it accepts has to be bounded. The size check only covered
+// `ciphertext`; `iv` was validated for base64 alphabet but not for length, and no
+// body limit was mounted, so the whole payload was buffered in memory and written
+// to SQLite. A 12-byte IV is 16 base64 characters: anything beyond that is abuse.
+{
+  const before = statSync(DB).size
+
+  // 2.1 — a giant iv
+  const bloat = await createRequest()
+  const hugeIv = await fetch(`${BASE}/s/${bloat.id}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ciphertext: 'AAAA', iv: 'A'.repeat(5_000_000) }),
+  })
+  await sleep(300)
+  const afterIv = statSync(DB).size
+
+  check(
+    'an oversized iv is refused',
+    hugeIv.status === 413 || hugeIv.status === 400,
+    `got ${hugeIv.status}`,
+  )
+  check(
+    'the database did not grow',
+    afterIv - before < 200_000,
+    `grew by ${((afterIv - before) / 1e6).toFixed(1)} MB after a single request`,
+  )
+
+  const stillPending = await (
+    await api(`/v1/requests/${bloat.id}`, { headers: { 'x-poll-token': bloat.poll_token } })
+  ).json()
+  check(
+    'a refused fill does not consume the link',
+    stillPending.status === 'pending',
+    stillPending.status,
+  )
+
+  // 2.2 — a giant ciphertext
+  const bloat2 = await createRequest()
+  const hugeCt = await fetch(`${BASE}/s/${bloat2.id}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ciphertext: 'A'.repeat(5_000_000), iv: 'AAAAAAAAAAAAAAAA' }),
+  })
+  check('an oversized ciphertext is refused', hugeCt.status === 413, `got ${hugeCt.status}`)
+
+  // 2.3 — a body far past the limit must die before being parsed into memory
+  const bloat3 = await createRequest()
+  const hugeBody = await fetch(`${BASE}/s/${bloat3.id}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"padding":"' + 'A'.repeat(10_000_000) + '","ciphertext":"AAAA","iv":"AAAA"}',
+  }).catch(() => ({ status: 0 }))
+  check('an oversized body is refused', hugeBody.status === 413, `got ${hugeBody.status}`)
+
+  // 2.4 — the legitimate path must keep working
+  const ok = await createRequest()
+  const filled = await fillRequest(ok, 'sk-a-perfectly-normal-secret')
+  check('a normal fill still succeeds', filled.status === 200, `got ${filled.status}`)
+
+  const revealed = await (
+    await api(`/v1/requests/${ok.id}/reveal`, {
+      method: 'POST',
+      body: JSON.stringify({ poll_token: ok.poll_token, encryption_key: ok.encryption_key }),
+    })
+  ).json()
+  check(
+    'and the secret still round-trips intact',
+    revealed.secret === 'sk-a-perfectly-normal-secret',
+    revealed.error ?? '',
+  )
 }
 
 report(proc)
