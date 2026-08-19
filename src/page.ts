@@ -191,6 +191,13 @@ export function renderForm(
   }
   tick();
 
+  // Report that this page actually rendered in a browser. Link-preview crawlers
+  // fetch the HTML but run no JavaScript, so they never get here — which is what
+  // keeps the "opened several times" warning meaningful.
+  try {
+    fetch('/s/' + ID + '/opened', { method: 'POST', keepalive: true }).catch(function () {});
+  } catch (e) {}
+
   var masked = false;
   toggle.addEventListener('click', function () {
     masked = !masked;

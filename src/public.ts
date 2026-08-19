@@ -97,8 +97,9 @@ pub.get('/s/:id', (c) => {
     return secureHtml(c, renderClosed(n, CLOSED_COPY[status]!), n, 410)
   }
 
-  // Open trace: the agent can read this and warn about a link opened several times.
-  queries.markOpened.run({ id: row.id, now: Date.now() })
+  // A fetch, not necessarily a human: this is also what a link-preview crawler
+  // does. The open itself is reported by the rendered page (POST /s/:id/opened).
+  queries.markFetched.run({ id: row.id })
 
   return secureHtml(
     c,
@@ -186,6 +187,23 @@ pub.post(
       return c.json({ ok: true, id: row.id })
   },
 )
+
+/**
+ * Beacon fired by the form page once it has rendered in a real browser.
+ *
+ * This is the whole point of splitting the two counters: Telegram, Slack, Discord
+ * and iMessage all fetch a URL server-side to build a preview, and none of them
+ * run JavaScript. Counting raw GETs meant the "opened several times" warning
+ * fired on every ordinary use until the human stopped reading it.
+ *
+ * Always answers 204, for any id, existing or not: a different status for a real
+ * id would turn this into an existence oracle.
+ */
+pub.post('/s/:id/opened', (c) => {
+  queries.markOpened.run({ id: c.req.param('id'), now: Date.now() })
+  c.header('Cache-Control', 'no-store')
+  return c.body(null, 204)
+})
 
 /**
  * Confirmation shown after a successful submission.

@@ -22,7 +22,9 @@ const api = (path, opts = {}) =>
 
 let failed = 0
 const check = (name, ok, detail = '') => {
-  console.log(`  ${ok ? '\x1b[32mOK\x1b[0m  ' : '\x1b[31mFAIL\x1b[0m'} ${name}${detail ? ` — ${detail}` : ''}`)
+  // Detail is diagnostic: only useful when something failed.
+  const suffix = !ok && detail ? ` — ${detail}` : ''
+  console.log(`  ${ok ? '\x1b[32mOK\x1b[0m  ' : '\x1b[31mFAIL\x1b[0m'} ${name}${suffix}`)
   if (!ok) failed++
 }
 
@@ -66,6 +68,24 @@ const countdown = await page.textContent('#countdown')
 check('countdown is running', /min|s/.test(countdown), countdown)
 check('no JS error on load', pageErrors.length === 0, pageErrors.join(' | '))
 check('no CSP violation', cspViolations.length === 0, cspViolations.join(' | '))
+
+// The beacon is what makes opened_count mean anything. If it never fires, the
+// counter sits at zero forever and the tamper signal is dead in the other
+// direction — silently, which is worse than crying wolf.
+await page.waitForTimeout(500)
+const counters = await (
+  await api(`/v1/requests/${created.id}`, { headers: { 'x-poll-token': created.poll_token } })
+).json()
+check(
+  'a real browser render reports exactly one open',
+  counters.opened_count === 1,
+  `opened_count is ${counters.opened_count} — the beacon did not fire`,
+)
+check(
+  'and the raw fetch is counted separately',
+  counters.fetched_count >= 1,
+  `fetched_count is ${counters.fetched_count}`,
+)
 
 // The fragment key must never leave the browser.
 const keyLeaked = await page.evaluate(() => {

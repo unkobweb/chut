@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS requests (
   created_at       INTEGER NOT NULL,
   expires_at       INTEGER NOT NULL,
 
+  fetched_count    INTEGER NOT NULL DEFAULT 0,
   opened_count     INTEGER NOT NULL DEFAULT 0,
   first_opened_at  INTEGER,
   filled_at        INTEGER,
@@ -40,6 +41,20 @@ CREATE INDEX IF NOT EXISTS idx_requests_expires ON requests (expires_at);
 CREATE INDEX IF NOT EXISTS idx_requests_status  ON requests (status);
 `)
 
+/**
+ * CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so a
+ * database created by an earlier version keeps its old shape. Add what is
+ * missing rather than requiring anyone to drop their data.
+ */
+function addColumnIfMissing(column: string, definition: string) {
+  const existing = db.prepare(`PRAGMA table_info(requests)`).all() as { name: string }[]
+  if (!existing.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE requests ADD COLUMN ${column} ${definition}`)
+  }
+}
+
+addColumnIfMissing('fetched_count', 'INTEGER NOT NULL DEFAULT 0')
+
 export interface RequestRow {
   id: string
   api_key_hash: string
@@ -51,6 +66,7 @@ export interface RequestRow {
   burn_on_reveal: number
   created_at: number
   expires_at: number
+  fetched_count: number
   opened_count: number
   first_opened_at: number | null
   filled_at: number | null
@@ -74,11 +90,27 @@ export const queries = {
 
   byId: db.prepare<[string], RequestRow>(`SELECT * FROM requests WHERE id = ?`),
 
+  /**
+   * Every HTTP fetch of the form page, whoever made it. Kept for forensics, not
+   * shown to the human as a tamper signal: link-preview crawlers land here.
+   */
+  markFetched: db.prepare(`
+    UPDATE requests SET fetched_count = fetched_count + 1 WHERE id = @id
+  `),
+
+  /**
+   * A page that actually rendered in a browser and reported itself. Crawlers run
+   * no JavaScript, so they never reach this — which is what makes the count
+   * meaningful enough to show a human.
+   *
+   * Only counts while the request can still be filled: a finished request must
+   * not accumulate opens.
+   */
   markOpened: db.prepare(`
     UPDATE requests
        SET opened_count = opened_count + 1,
            first_opened_at = COALESCE(first_opened_at, @now)
-     WHERE id = @id
+     WHERE id = @id AND status = 'pending'
   `),
 
   /**

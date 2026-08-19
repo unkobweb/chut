@@ -103,9 +103,14 @@ curl http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb \
   -H "X-Poll-Token: aB3x..."
 ```
 
-`status` moves from `pending` to `filled`. The response also carries `opened_count`,
-`filled_at` and `filled_from_ip_hash` — enough for the agent to flag something odd
-to its human.
+`status` moves from `pending` to `filled`. The response also carries `filled_at`,
+`filled_from_ip_hash` and two distinct counters:
+
+- `opened_count` — pages that actually rendered in a browser. Warn on this.
+- `fetched_count` — raw HTTP fetches, link-preview crawlers included. Telegram,
+  Slack, Discord and iMessage all fetch a shared URL to build a preview, so this
+  is above zero before your human clicks anything. Keep it for forensics, never
+  warn on it.
 
 **3. The agent reveals, at the last moment**
 

@@ -620,4 +620,108 @@ section('07 · poll_token must never travel in a URL')
   }
 }
 
+// =============================================================================
+section('08 · Link previews must not consume the tamper signal')
+// =============================================================================
+// opened_count is what lets an agent say "this link was opened more times than it
+// should have been". Every GET incremented it — including the server-side fetch
+// Telegram, Slack, Discord and iMessage perform to build a link preview. So the
+// counter read 1 before the human had clicked anything, the agent warned on every
+// single normal use, and by the third false alarm nobody reads the warning any
+// more. A signal that cries wolf during ordinary use is worse than no signal: it
+// trains the human to dismiss the one alert that mattered.
+{
+  const srv = await startServerOn(8809, { RATE_LIMIT_PER_MIN: '1000' })
+  const create = async () =>
+    (
+      await fetch(`${srv.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+  const stateOf = async (r) =>
+    (
+      await fetch(`${srv.base}/v1/requests/${r.id}`, {
+        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': r.poll_token },
+      })
+    ).json()
+
+  try {
+    // 8.1 — the crawlers that fetch a URL to render a preview run no JavaScript
+    const previewed = await create()
+    for (const ua of [
+      'TelegramBot (like TwitterBot)',
+      'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)',
+      'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+      'WhatsApp/2.23.20.0 A',
+    ]) {
+      await fetch(`${srv.base}/s/${previewed.id}`, { headers: { 'user-agent': ua } })
+    }
+
+    const afterPreviews = await stateOf(previewed)
+    check(
+      'four link-preview fetches leave opened_count at zero',
+      afterPreviews.opened_count === 0,
+      `opened_count is ${afterPreviews.opened_count} before the human clicked anything`,
+    )
+
+    // 8.2 — nothing is lost: raw fetches remain visible for forensics
+    check(
+      'the raw fetches are still recorded separately',
+      afterPreviews.fetched_count === 4,
+      `fetched_count is ${JSON.stringify(afterPreviews.fetched_count)}, expected 4`,
+    )
+
+    // 8.3 — a rendered page reports itself, and that is what counts as an open
+    await fetch(`${srv.base}/s/${previewed.id}/opened`, { method: 'POST' })
+    const afterRender = await stateOf(previewed)
+    check(
+      'a rendered page counts as exactly one open',
+      afterRender.opened_count === 1,
+      `opened_count is ${afterRender.opened_count}`,
+    )
+    check('and first_opened_at is set by the render, not the preview', afterRender.first_opened_at !== null)
+
+    // 8.4 — the realistic sequence: previews, then the human. Exactly one open.
+    const realistic = await create()
+    await fetch(`${srv.base}/s/${realistic.id}`, {
+      headers: { 'user-agent': 'TelegramBot (like TwitterBot)' },
+    })
+    await fetch(`${srv.base}/s/${realistic.id}`)
+    await fetch(`${srv.base}/s/${realistic.id}/opened`, { method: 'POST' })
+    const human = await stateOf(realistic)
+    check(
+      'a normal Telegram journey reports one open, not three',
+      human.opened_count === 1,
+      `opened_count is ${human.opened_count} — the agent would warn on a legitimate use`,
+    )
+
+    // 8.5 — the beacon is not a free counter on a finished request
+    const finished = await create()
+    await fetch(`${srv.base}/v1/requests/${finished.id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': finished.poll_token },
+    })
+    await fetch(`${srv.base}/s/${finished.id}/opened`, { method: 'POST' })
+    const cancelled = await stateOf(finished)
+    check(
+      'the beacon does not count against a cancelled request',
+      cancelled.opened_count === 0,
+      `opened_count is ${cancelled.opened_count}`,
+    )
+
+    // 8.6 — an unknown id must not become an existence oracle through the beacon
+    const ghost = await fetch(`${srv.base}/s/aaaaaaaaaaaaaaaa/opened`, { method: 'POST' })
+    const known = await fetch(`${srv.base}/s/${realistic.id}/opened`, { method: 'POST' })
+    check(
+      'the beacon answers alike for a real and a made-up id',
+      ghost.status === known.status,
+      `unknown -> ${ghost.status}, known -> ${known.status}`,
+    )
+  } finally {
+    srv.proc.kill()
+  }
+}
+
 report(proc)

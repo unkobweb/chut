@@ -43,8 +43,15 @@ export const openapi = {
           opened_count: {
             type: 'integer',
             description:
-              'How many times the page was opened. Greater than 1 means the link was seen ' +
-              'several times — worth flagging to the human.',
+              'How many times the page actually rendered in a browser. Greater than 1 means ' +
+              'a human opened the link more than once — worth flagging. Link-preview ' +
+              'crawlers do not appear here, so this can be surfaced without crying wolf.',
+          },
+          fetched_count: {
+            type: 'integer',
+            description:
+              'Raw HTTP fetches of the page, crawlers included. Kept for forensics; do not ' +
+              'warn on it, chat clients inflate it on every share.',
           },
           first_opened_at: { type: ['string', 'null'], format: 'date-time' },
           filled_at: { type: ['string', 'null'], format: 'date-time' },

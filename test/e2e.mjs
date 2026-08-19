@@ -95,7 +95,11 @@ check('the key never appears in the HTML', !pageHtml.includes(encryption_key))
 const pollPending = await api(`/v1/requests/${id}`, { headers: { 'x-poll-token': poll_token } })
 const pending = await pollPending.json()
 check('polling reports pending', pending.status === 'pending')
-check('the page open is counted', pending.opened_count === 1)
+check('a bare fetch is counted as a fetch, not an open', pending.fetched_count === 1)
+check(
+  'and does not inflate opened_count (link-preview crawlers land here)',
+  pending.opened_count === 0,
+)
 check('polling never returns a secret', !JSON.stringify(pending).includes('ciphertext'))
 
 // Revealing too early

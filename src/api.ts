@@ -42,6 +42,7 @@ function serialize(row: RequestRow, now = Date.now()) {
     expires_in_seconds: Math.max(0, Math.round((row.expires_at - now) / 1000)),
     burn_on_reveal: row.burn_on_reveal === 1,
     opened_count: row.opened_count,
+    fetched_count: row.fetched_count,
     first_opened_at: row.first_opened_at ? new Date(row.first_opened_at).toISOString() : null,
     filled_at: row.filled_at ? new Date(row.filled_at).toISOString() : null,
     filled_from_ip_hash: row.filled_ip_hash,
