@@ -52,7 +52,7 @@ export function Layout({
         <style nonce={nonce} dangerouslySetInnerHTML={{ __html: styles() }} />
       </head>
       <body class="font-sans antialiased">
-        <main class="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-8 sm:px-6">
+        <main class="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-4 py-6 sm:px-6">
           {children}
         </main>
         {script ? <script nonce={nonce} dangerouslySetInnerHTML={{ __html: script }} /> : null}

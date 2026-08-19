@@ -61,8 +61,10 @@ export interface Messages {
 
 const en: Messages = {
   tagline: 'one-time secret drop · no account · no history',
-  intro:
-    'An assistant is asking you for a credential. Read what it says about itself before you decide.',
+  /** One line. The panel below already says who, what and why, and the
+   * "cannot verify" note already says to read it critically — spelling all of
+   * that out again pushed the button off the screen. */
+  intro: 'An assistant is asking you for a credential.',
   whoLabel: 'who is asking',
   whatLabel: 'what it wants',
   whyLabel: 'why, in its words',
@@ -78,8 +80,7 @@ const en: Messages = {
   stepScrambled: 'scrambled in your browser',
   stepSending: 'sending the sealed copy…',
   keepOpen: 'Keep this tab open for a moment. The unscrambled secret never leaves this page.',
-  noteEncrypted:
-    'Scrambled in your browser before it leaves. The server only stores text it cannot read.',
+  noteEncrypted: 'Scrambled in your browser — the server only stores text it cannot read.',
   noteSingleUse: 'One value, once — then this link is dead.',
   expires: 'expires',
   expired: 'expired',

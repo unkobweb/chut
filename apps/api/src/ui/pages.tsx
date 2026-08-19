@@ -20,12 +20,20 @@ function Card({ children }: { children: Child }) {
   return <div class="w-full rounded-xl border border-line bg-panel p-5 sm:p-7">{children}</div>
 }
 
-function Header({ locale, right }: { locale: Locale; right?: Child }) {
+/**
+ * `tagline` is deliberately absent from the form. It is a strapline, and this is
+ * not a page anyone is browsing — every line has to earn the vertical space it
+ * takes from the button. It still appears on the index, where there is nothing
+ * to do and room to explain.
+ */
+function Header({ locale, right, tagline = false }: { locale: Locale; right?: Child; tagline?: boolean }) {
   return (
-    <header class="mb-6 flex items-start justify-between gap-4">
+    <header class="mb-5 flex items-start justify-between gap-4">
       <div>
         <Wordmark />
-        <p class="mt-2 font-mono text-[11px] leading-relaxed text-faint">{locale.t.tagline}</p>
+        {tagline ? (
+          <p class="mt-2 font-mono text-[11px] leading-relaxed text-faint">{locale.t.tagline}</p>
+        ) : null}
       </div>
       {right}
     </header>
@@ -46,7 +54,7 @@ function Header({ locale, right }: { locale: Locale; right?: Child }) {
  */
 function Countdown({ locale }: { locale: Locale }) {
   return (
-    <div id="countdown-block" class="mt-5 flex items-baseline gap-2">
+    <div id="countdown-block" class="mt-4 flex items-baseline gap-3">
       <span class="font-mono text-[13px] whitespace-nowrap text-faint">
         {locale.t.expires}{' '}
         <span id="countdown" aria-live="polite" class="tabular-nums text-dim">
@@ -120,12 +128,19 @@ export function FormPage(props: {
           * where attention is scarce. A page with no h1 is an accessibility
           * defect, so the sentence that frames the decision does the job.
           */}
-        <h1 class="mb-5 text-[15px] leading-relaxed font-normal text-dim">{t.intro}</h1>
+        {/*
+          * Screen-reader only. The panel underneath states who is asking and
+          * what for, in those words, so printing the same thing as a sentence
+          * above it was costing 57px of a viewport that has to fit a decision,
+          * a field and a timer. The heading still exists — a page without one is
+          * an accessibility defect — it just no longer repeats itself.
+          */}
+        <h1 class="sr-only">{t.intro}</h1>
 
         {/* What the agent claims. Presented as a claim, never as a fact. */}
-        <section class={`${PANEL} mb-4 p-4`}>
+        <section class={`${PANEL} mb-4 p-4 leading-snug`}>
           <p class={LABEL}>{t.whoLabel}</p>
-          <p class="mb-3 font-mono text-[15px] font-semibold break-words text-ink">
+          <p class="mb-2.5 font-mono text-[15px] font-semibold break-words text-ink">
             {props.requester}
           </p>
 
@@ -134,12 +149,12 @@ export function FormPage(props: {
 
           {props.purpose ? (
             <>
-              <p class={`${LABEL} mt-3`}>{t.whyLabel}</p>
+              <p class={`${LABEL} mt-2.5`}>{t.whyLabel}</p>
               <p class="text-sm leading-relaxed break-words text-dim">“{props.purpose}”</p>
             </>
           ) : null}
 
-          <p class="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
+          <p class="mt-3 border-t border-line pt-2.5 text-xs leading-snug text-faint">
             {t.unverified}
           </p>
         </section>
@@ -150,7 +165,7 @@ export function FormPage(props: {
           * page that shouts is a page that reads as a scam. This has to be
           * noticed and read, not obeyed in a panic.
           */}
-        <p class="mb-6 rounded-lg bg-deep/50 p-4 text-[14px] leading-relaxed text-dim">
+        <p class="mb-5 rounded-lg bg-deep/50 px-4 py-3 text-[13.5px] leading-snug text-dim">
           {t.caution}
         </p>
 
@@ -171,7 +186,7 @@ export function FormPage(props: {
 
           <textarea
             id="secret"
-            rows={3}
+            rows={2}
             required
             spellcheck={false}
             autocapitalize="off"
@@ -208,7 +223,7 @@ export function FormPage(props: {
           <p class="pt-1 text-faint">{t.keepOpen}</p>
         </div>
 
-        <div id="field-note" class="mt-5 space-y-2 text-[13px] leading-relaxed text-faint">
+        <div id="field-note" class="mt-4 space-y-1 text-[12.5px] leading-snug text-faint">
           <p>{t.noteEncrypted}</p>
           <p>{t.noteSingleUse}</p>
         </div>
@@ -334,7 +349,7 @@ export function IndexPage(nonce: string, locale: Locale, baseUrl: string): strin
   return render(
     <Layout title="chut" nonce={nonce} locale={locale}>
       <Card>
-        <Header locale={locale} />
+        <Header locale={locale} tagline />
         <p class="mb-5 text-[15px] leading-relaxed text-dim">{locale.t.indexBlurb}</p>
         <div class={`${PANEL} p-4 font-mono text-xs text-dim`}>
           <p>POST {baseUrl}/v1/requests</p>
