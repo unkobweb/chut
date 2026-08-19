@@ -840,4 +840,100 @@ section('09 · Cross-site requests must not be able to fill a slot')
   }
 }
 
+// =============================================================================
+section('10 · Malformed bodies must never reach the error handler')
+// =============================================================================
+// `await c.req.json()` returns null for the literal body `null`, and the cast to
+// Record<string, unknown> does nothing at runtime, so the next property access
+// threw and the request ended as a 500. The try/catch only covered parse
+// failures, not what the parsed value turned out to be.
+//
+// A 500 on an input this trivial is not dangerous by itself — the handler returns
+// a generic message. It matters because it marks the boundary where validation
+// stopped being exhaustive, which is exactly where someone probing this service
+// would start digging. Every endpoint should answer 4xx for garbage it was handed
+// and keep 500 for genuine faults, so an unexpected 500 stays a real signal.
+{
+  const srv = await startServerOn(8812, { RATE_LIMIT_PER_MIN: '1000' })
+  try {
+    const req = await (
+      await fetch(`${srv.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+
+    // Every JSON value that is not an object, on every endpoint that reads a body.
+    const NON_OBJECTS = ['null', '[]', '[1,2,3]', '"a string"', '42', 'true']
+
+    const endpoints = [
+      {
+        name: 'POST /v1/requests',
+        url: `${srv.base}/v1/requests`,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+      },
+      {
+        name: 'POST /v1/requests/:id/reveal',
+        url: `${srv.base}/v1/requests/${req.id}/reveal`,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${KEY}`,
+          'x-poll-token': req.poll_token,
+        },
+      },
+      {
+        name: 'POST /s/:id',
+        url: `${srv.base}/s/${req.id}`,
+        headers: { 'content-type': 'application/json' },
+      },
+    ]
+
+    for (const endpoint of endpoints) {
+      const statuses = []
+      for (const body of NON_OBJECTS) {
+        const res = await fetch(endpoint.url, { method: 'POST', headers: endpoint.headers, body })
+        statuses.push({ body, status: res.status })
+      }
+      const crashed = statuses.filter((r) => r.status >= 500)
+      check(
+        `${endpoint.name} answers 4xx for every non-object body`,
+        crashed.length === 0,
+        `500 on: ${crashed.map((r) => r.body).join(', ')}`,
+      )
+    }
+
+    // Malformed JSON was already handled; keep it that way.
+    for (const endpoint of endpoints) {
+      const res = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: endpoint.headers,
+        body: '{"unterminated": ',
+      })
+      check(`${endpoint.name} answers 4xx for malformed JSON`, res.status < 500, `got ${res.status}`)
+    }
+
+    // A body that is absent entirely is not the same as a broken one.
+    const noBody = await fetch(`${srv.base}/v1/requests/${req.id}/reveal`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
+    })
+    check('an empty body is handled without a crash', noBody.status < 500, `got ${noBody.status}`)
+
+    // The strongest statement: nothing above reached the unhandled-error path.
+    const log = srv.readLog()
+    check(
+      'no unhandled error was logged throughout',
+      !log.includes('Unhandled error'),
+      log.split('\n').filter((l) => l.includes('Unhandled error')).join(' | '),
+    )
+
+    // And the service is still working afterwards.
+    const stillAlive = await fetch(`${srv.base}/healthz`)
+    check('the service is still healthy', stillAlive.status === 200)
+  } finally {
+    srv.proc.kill()
+  }
+}
+
 report(proc)

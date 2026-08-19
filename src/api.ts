@@ -1,5 +1,6 @@
 import { type Context, Hono } from 'hono'
 import { requireApiKey } from './auth.js'
+import { readJsonObject } from './body.js'
 import { config } from './config.js'
 import {
   decryptSecret,
@@ -56,12 +57,8 @@ function serialize(row: RequestRow, now = Date.now()) {
  * The agent creates an empty slot and gets back the link to hand to its human.
  */
 api.post('/requests', async (c) => {
-  let body: Record<string, unknown>
-  try {
-    body = (await c.req.json()) as Record<string, unknown>
-  } catch {
-    return badRequest(c, 'Invalid JSON body.')
-  }
+  const body = await readJsonObject(c)
+  if (body instanceof Response) return body
 
   const label = typeof body.label === 'string' ? body.label.trim() : ''
   if (!label) return badRequest(c, 'Field "label" is required (what you are asking for).')
@@ -208,13 +205,10 @@ api.get('/requests/:id', (c) => {
  * Returns the plaintext secret to the agent, once by default.
  */
 api.post('/requests/:id/reveal', async (c) => {
-  let body: Record<string, unknown> = {}
-  try {
-    const text = await c.req.text()
-    if (text) body = JSON.parse(text) as Record<string, unknown>
-  } catch {
-    return badRequest(c, 'Invalid JSON body.')
-  }
+  // Empty is allowed here: the poll_token may travel in the X-Poll-Token header.
+  const body = await readJsonObject(c, { allowEmpty: true })
+  if (body instanceof Response) return body
+
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
 

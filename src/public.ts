@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { type Context, Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
+import { readJsonObject } from './body.js'
 import { config } from './config.js'
 import { clientAddress } from './client-ip.js'
 import { hashIp } from './crypto.js'
@@ -145,12 +146,8 @@ pub.post(
       )
     }
 
-    let body: { ciphertext?: unknown; iv?: unknown }
-    try {
-      body = (await c.req.json()) as typeof body
-    } catch {
-      return c.json({ error: 'invalid_request', message: 'Invalid JSON body.' }, 400)
-    }
+    const body = await readJsonObject(c)
+    if (body instanceof Response) return body
 
     const { ciphertext, iv } = body
     if (typeof ciphertext !== 'string' || typeof iv !== 'string' || !ciphertext || !iv) {
