@@ -22,7 +22,7 @@ function badRequest(c: Context, message: string) {
   return c.json({ error: 'invalid_request', message }, 400)
 }
 
-/** Vue publique d'une demande: jamais de secret, jamais de hash de token. */
+/** Public view of a request: never a secret, never a token hash. */
 function serialize(row: RequestRow, now = Date.now()) {
   const status = effectiveStatus(row, now)
   return {
@@ -47,38 +47,38 @@ function serialize(row: RequestRow, now = Date.now()) {
 
 /**
  * POST /v1/requests
- * L'agent cree un emplacement vide et recupere le lien a transmettre a son humain.
+ * The agent creates an empty slot and gets back the link to hand to its human.
  */
 api.post('/requests', async (c) => {
   let body: Record<string, unknown>
   try {
     body = (await c.req.json()) as Record<string, unknown>
   } catch {
-    return badRequest(c, 'Corps JSON invalide.')
+    return badRequest(c, 'Invalid JSON body.')
   }
 
   const label = typeof body.label === 'string' ? body.label.trim() : ''
-  if (!label) return badRequest(c, 'Le champ "label" est requis (ce que tu demandes).')
+  if (!label) return badRequest(c, 'Field "label" is required (what you are asking for).')
   if (label.length > MAX_TEXT.label)
-    return badRequest(c, `"label" est limite a ${MAX_TEXT.label} caracteres.`)
+    return badRequest(c, `"label" is limited to ${MAX_TEXT.label} characters.`)
 
   const requester = typeof body.requester === 'string' ? body.requester.trim() : ''
   if (!requester)
-    return badRequest(c, 'Le champ "requester" est requis (qui demande, vu par l\'humain).')
+    return badRequest(c, 'Field "requester" is required (who is asking, as the human sees it).')
   if (requester.length > MAX_TEXT.requester)
-    return badRequest(c, `"requester" est limite a ${MAX_TEXT.requester} caracteres.`)
+    return badRequest(c, `"requester" is limited to ${MAX_TEXT.requester} characters.`)
 
   const purpose = typeof body.purpose === 'string' ? body.purpose.trim() : ''
   if (purpose.length > MAX_TEXT.purpose)
-    return badRequest(c, `"purpose" est limite a ${MAX_TEXT.purpose} caracteres.`)
+    return badRequest(c, `"purpose" is limited to ${MAX_TEXT.purpose} characters.`)
 
   let ttl = config.defaultTtl
   if (body.ttl_seconds !== undefined) {
     if (typeof body.ttl_seconds !== 'number' || !Number.isFinite(body.ttl_seconds))
-      return badRequest(c, '"ttl_seconds" doit etre un nombre.')
+      return badRequest(c, '"ttl_seconds" must be a number.')
     ttl = Math.floor(body.ttl_seconds)
     if (ttl < 30 || ttl > config.maxTtl)
-      return badRequest(c, `"ttl_seconds" doit etre entre 30 et ${config.maxTtl}.`)
+      return badRequest(c, `"ttl_seconds" must be between 30 and ${config.maxTtl}.`)
   }
 
   const burnOnReveal = body.burn_on_reveal === undefined ? true : body.burn_on_reveal === true
@@ -86,8 +86,8 @@ api.post('/requests', async (c) => {
   const now = Date.now()
   const id = newRequestId()
   const pollToken = randomToken()
-  // Cette cle n'est jamais persistee: elle part dans le fragment d'URL et dans
-  // cette reponse. Sans elle, le contenu chiffre en base est inexploitable.
+  // Never persisted: it goes into the URL fragment and into this response only.
+  // Without it, the ciphertext stored in the database is unusable.
   const encryptionKey = newEncryptionKey()
 
   queries.insert.run({
@@ -106,26 +106,22 @@ api.post('/requests', async (c) => {
   return c.json(
     {
       ...serialize(row, now),
-      // Le fragment (#) n'est jamais transmis au serveur par le navigateur.
+      // Browsers never send the fragment (#) to the server.
       url: `${config.baseUrl}/s/${id}#${encryptionKey}`,
       poll_token: pollToken,
       encryption_key: encryptionKey,
       _note:
-        'Transmets "url" a ton humain. Garde "poll_token" et "encryption_key" pour toi: les deux sont necessaires pour lire le secret.',
+        'Hand "url" to your human. Keep "poll_token" and "encryption_key" to yourself: both are required to read the secret.',
     },
     201,
   )
 })
 
 /**
- * Le poll_token prouve que l'appelant est bien l'agent qui a cree la demande.
- * La cle API seule ne suffit pas: elle peut couvrir plusieurs agents.
+ * The poll_token proves the caller is the agent that created the request.
+ * The API key alone is not enough: it may cover several agents.
  */
-function authorizeRow(
-  c: Context,
-  row: RequestRow,
-  bodyToken?: string,
-) {
+function authorizeRow(c: Context, row: RequestRow, bodyToken?: string) {
   if (!safeEqualHex(row.api_key_hash, c.get('apiKeyHash'))) return 'not_found' as const
 
   const provided = c.req.header('x-poll-token') ?? bodyToken ?? c.req.query('poll_token') ?? ''
@@ -136,7 +132,7 @@ function authorizeRow(
 
 /**
  * GET /v1/requests/:id
- * Sondage par l'agent. Ne renvoie jamais le secret.
+ * Polled by the agent. Never returns the secret.
  */
 api.get('/requests/:id', (c) => {
   const row = queries.byId.get(c.req.param('id'))
@@ -146,7 +142,7 @@ api.get('/requests/:id', (c) => {
   if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
   if (verdict === 'forbidden')
     return c.json(
-      { error: 'forbidden', message: 'poll_token manquant ou invalide (en-tete X-Poll-Token).' },
+      { error: 'forbidden', message: 'Missing or invalid poll_token (X-Poll-Token header).' },
       403,
     )
 
@@ -155,7 +151,7 @@ api.get('/requests/:id', (c) => {
 
 /**
  * POST /v1/requests/:id/reveal
- * Rend le secret en clair a l'agent, une seule fois par defaut.
+ * Returns the plaintext secret to the agent, once by default.
  */
 api.post('/requests/:id/reveal', async (c) => {
   let body: Record<string, unknown> = {}
@@ -163,15 +159,19 @@ api.post('/requests/:id/reveal', async (c) => {
     const text = await c.req.text()
     if (text) body = JSON.parse(text) as Record<string, unknown>
   } catch {
-    return badRequest(c, 'Corps JSON invalide.')
+    return badRequest(c, 'Invalid JSON body.')
   }
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
 
-  const verdict = authorizeRow(c, row, typeof body.poll_token === 'string' ? body.poll_token : undefined)
+  const verdict = authorizeRow(
+    c,
+    row,
+    typeof body.poll_token === 'string' ? body.poll_token : undefined,
+  )
   if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
   if (verdict === 'forbidden')
-    return c.json({ error: 'forbidden', message: 'poll_token manquant ou invalide.' }, 403)
+    return c.json({ error: 'forbidden', message: 'Missing or invalid poll_token.' }, 403)
 
   const now = Date.now()
   const status = effectiveStatus(row, now)
@@ -182,15 +182,15 @@ api.post('/requests/:id/reveal', async (c) => {
         status,
         message:
           status === 'pending'
-            ? "L'humain n'a pas encore rempli le formulaire."
-            : `Impossible de reveler une demande dans l'etat "${status}".`,
+            ? 'The human has not filled the form yet.'
+            : `Cannot reveal a request in state "${status}".`,
       },
       409,
     )
   }
 
   const key = typeof body.encryption_key === 'string' ? body.encryption_key : ''
-  if (!key) return badRequest(c, 'Le champ "encryption_key" est requis (recu a la creation).')
+  if (!key) return badRequest(c, 'Field "encryption_key" is required (received on creation).')
 
   let secret: string
   try {
@@ -199,20 +199,20 @@ api.post('/requests/:id/reveal', async (c) => {
     return c.json(
       {
         error: 'decryption_failed',
-        message: 'Dechiffrement impossible: encryption_key incorrecte ou donnees alterees.',
+        message: 'Decryption failed: wrong encryption_key or tampered data.',
       },
       400,
     )
   }
 
-  // Le dechiffrement a lieu AVANT toute ecriture : une encryption_key erronee
-  // repart en 400 sans detruire le secret de l'agent legitime.
+  // Decryption happens BEFORE any write: a wrong encryption_key returns 400
+  // without destroying the legitimate agent's secret.
   //
-  // Ensuite, l'UPDATE conditionnel EST la course. Plusieurs appels simultanes ont
-  // pu lire la meme ligne et dechiffrer en memoire, mais un seul verra changes===1.
-  // Les autres repartent en 409 — ce qui preserve le burn comme detecteur
-  // d'intrusion : un voleur qui court a cote de l'agent ne peut plus obtenir le
-  // secret « en plus » de lui sans que l'un des deux voie un 409.
+  // The conditional UPDATE below IS the race. Several concurrent calls may have
+  // read the same row and decrypted in memory, but only one sees changes === 1.
+  // The others get a 409 — which preserves the burn as an intrusion detector: a
+  // thief racing alongside the agent can no longer obtain the secret *in
+  // addition to* the agent without one of the two seeing a 409.
   if (row.burn_on_reveal === 1) {
     const claim = queries.burn.run({ id: row.id, now })
     if (claim.changes === 0) {
@@ -220,7 +220,7 @@ api.post('/requests/:id/reveal', async (c) => {
         {
           error: 'not_filled',
           status: 'revealed',
-          message: 'Ce secret vient d’etre revele par un autre appel. Il n’est plus disponible.',
+          message: 'This secret was just revealed by another call. It is no longer available.',
         },
         409,
       )
@@ -239,7 +239,7 @@ api.post('/requests/:id/reveal', async (c) => {
   })
 })
 
-/** DELETE /v1/requests/:id — annulation immediate, le contenu chiffre est efface. */
+/** DELETE /v1/requests/:id — cancels immediately and wipes the ciphertext. */
 api.delete('/requests/:id', (c) => {
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
@@ -247,7 +247,7 @@ api.delete('/requests/:id', (c) => {
   const verdict = authorizeRow(c, row)
   if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
   if (verdict === 'forbidden')
-    return c.json({ error: 'forbidden', message: 'poll_token manquant ou invalide.' }, 403)
+    return c.json({ error: 'forbidden', message: 'Missing or invalid poll_token.' }, 403)
 
   queries.cancel.run({ id: row.id })
   return c.json(serialize(queries.byId.get(row.id)!))

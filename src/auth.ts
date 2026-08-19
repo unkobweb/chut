@@ -8,20 +8,20 @@ declare module 'hono' {
   }
 }
 
-/** Bearer token -> SHA-256 compare contre la liste configuree. */
+/** Bearer token -> SHA-256 compared against the configured set. */
 export async function requireApiKey(c: Context, next: Next) {
   const header = c.req.header('authorization') ?? ''
   const match = /^Bearer\s+(.+)$/i.exec(header.trim())
   if (!match?.[1]) {
     return c.json(
-      { error: 'unauthorized', message: 'En-tete Authorization: Bearer <api_key> requis.' },
+      { error: 'unauthorized', message: 'Authorization: Bearer <api_key> header is required.' },
       401,
     )
   }
 
   const hash = sha256(match[1])
   if (!API_KEY_HASHES.has(hash)) {
-    return c.json({ error: 'unauthorized', message: 'Cle API inconnue.' }, 401)
+    return c.json({ error: 'unauthorized', message: 'Unknown API key.' }, 401)
   }
 
   c.set('apiKeyHash', hash)
@@ -47,7 +47,7 @@ export async function rateLimit(c: Context, next: Next) {
     return c.json(
       {
         error: 'rate_limited',
-        message: `Limite de ${config.rateLimitPerMin} demandes par minute atteinte.`,
+        message: `Rate limit of ${config.rateLimitPerMin} requests per minute reached.`,
         retry_after_seconds: retryAfter,
       },
       429,
@@ -58,7 +58,7 @@ export async function rateLimit(c: Context, next: Next) {
   await next()
 }
 
-/** Evite que la map grossisse indefiniment sur un service qui tourne longtemps. */
+/** Keeps the map from growing without bound on a long-running server. */
 setInterval(() => {
   const now = Date.now()
   for (const [key, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(key)

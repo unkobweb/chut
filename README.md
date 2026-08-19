@@ -1,21 +1,22 @@
 # chut
 
-**Un agent IA a besoin d'une clé API. Il ne la demande plus dans le chat.**
+**Your AI agent needs an API key. It stops asking for it in the chat.**
 
-Il appelle `POST /v1/requests`, récupère un lien, te l'envoie. Tu ouvres le lien, tu colles ta clé,
-l'agent la récupère une fois. La valeur ne traîne pas dans l'historique Telegram, Discord ou Slack.
+The agent calls `POST /v1/requests`, gets a link, and hands it to you. You open the
+link, paste your key, and the agent reads it once. The value never sits in your
+Telegram, Discord or Slack history.
 
-Le secret est **chiffré dans ton navigateur** avant d'être envoyé : le serveur ne le voit jamais
-en clair et la base de données seule ne permet pas de le lire.
+The secret is **encrypted in your browser** before it is sent: the server never sees
+it in plaintext, and a copy of the database alone is not enough to read it.
 
-> V1. Un seul outil : la demande de secret. Le reste de la suite viendra après.
+> v1. One tool: the secret request. The rest of the suite comes later — see [ROADMAP.md](ROADMAP.md).
 
 ---
 
-## Le flux
+## The flow
 
 ```
-  Agent                        chut                       Humain
+  Agent                          chut                          Human
     │                             │                             │
     │ POST /v1/requests           │                             │
     │────────────────────────────>│                             │
@@ -23,11 +24,11 @@ en clair et la base de données seule ne permet pas de le lire.
     │    encryption_key }         │                             │
     │<────────────────────────────│                             │
     │                             │                             │
-    │  « ouvre ce lien »          │                             │
+    │  "open this link"           │                             │
     │─────────────────────────────────────────────────────────> │
-    │                             │  GET /s/:id#clé             │
+    │                             │  GET /s/:id#key             │
     │                             │<────────────────────────────│
-    │                             │  POST /s/:id  (chiffré)     │
+    │                             │  POST /s/:id  (ciphertext)  │
     │                             │<────────────────────────────│
     │ GET /v1/requests/:id        │                             │
     │────────────────────────────>│                             │
@@ -35,46 +36,47 @@ en clair et la base de données seule ne permet pas de le lire.
     │<────────────────────────────│                             │
     │ POST /v1/requests/:id/reveal│                             │
     │────────────────────────────>│                             │
-    │  { secret }   puis détruit  │                             │
+    │  { secret }   then destroyed│                             │
     │<────────────────────────────│                             │
 ```
 
 ---
 
-## Démarrer
+## Getting started
 
 ```bash
 npm install
 cp .env.example .env
 
-# Génère une vraie clé API et un vrai sel
+# Generate a real API key and a real salt
 node -e "console.log('API_KEYS=' + require('crypto').randomBytes(32).toString('base64url'))"
 node -e "console.log('IP_HASH_SALT=' + require('crypto').randomBytes(16).toString('hex'))"
 
 npm start          # http://localhost:8787
 ```
 
-Tests :
+Tests:
 
 ```bash
-npm test                      # 45 assertions sur le flux et les contrôles d'accès
-node test/browser.mjs         # rejoue le parcours dans un vrai Chromium + captures d'écran
+npm test                      # 48 assertions on the flow and access control
+node test/attacks.mjs         # attack suite — one case per audit finding
+node test/browser.mjs         # replays the journey in a real Chromium + screenshots
 ```
 
 ---
 
-## Utilisation
+## Usage
 
-**1. L'agent crée la demande**
+**1. The agent creates the request**
 
 ```bash
 curl -X POST http://localhost:8787/v1/requests \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "requester": "Assistant Telegram",
-    "label": "Clé API Gmail",
-    "purpose": "Lire tes 20 derniers mails pour te faire un résumé chaque matin",
+    "requester": "Telegram Assistant",
+    "label": "Gmail API key",
+    "purpose": "Read your last 20 emails to send you a summary every morning",
     "ttl_seconds": 900
   }'
 ```
@@ -90,10 +92,10 @@ curl -X POST http://localhost:8787/v1/requests \
 }
 ```
 
-L'agent envoie **`url`** à son humain. Il garde `poll_token` et `encryption_key` : les deux sont
-nécessaires pour lire le secret, et **aucun des deux ne doit être affiché à l'utilisateur**.
+The agent sends **`url`** to its human. It keeps `poll_token` and `encryption_key`:
+both are required to read the secret, and **neither should ever be shown to the user**.
 
-**2. L'agent sonde**
+**2. The agent polls**
 
 ```bash
 curl http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb \
@@ -101,10 +103,11 @@ curl http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb \
   -H "X-Poll-Token: aB3x..."
 ```
 
-`status` passe de `pending` à `filled`. La réponse contient aussi `opened_count`,
-`filled_at` et `filled_from_ip_hash` — de quoi signaler une anomalie à l'humain.
+`status` moves from `pending` to `filled`. The response also carries `opened_count`,
+`filled_at` and `filled_from_ip_hash` — enough for the agent to flag something odd
+to its human.
 
-**3. L'agent révèle, au dernier moment**
+**3. The agent reveals, at the last moment**
 
 ```bash
 curl -X POST http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb/reveal \
@@ -117,92 +120,104 @@ curl -X POST http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb/reveal \
 { "secret": "AIzaSy...", "burned": true }
 ```
 
-Par défaut le secret est **détruit immédiatement après cette lecture**. À n'appeler qu'au moment
-de s'en servir. Pour garder le secret lisible jusqu'à expiration, passer `burn_on_reveal: false`
-à la création.
+By default the secret is **destroyed immediately after this read**. Call it only
+when you are about to use it. Pass `burn_on_reveal: false` at creation to keep the
+secret readable until it expires.
 
 ---
 
-## Brancher un agent
+## Wiring an agent
 
-La spec est servie sur `/openapi.json` et rédigée pour être chargée telle quelle comme définition
-d'outil. Les `description` sont écrites pour le modèle, pas pour un humain.
+The spec is served at `/openapi.json` and written to be loaded as-is as a tool
+definition. The `description` fields are written for the model, not for a human.
 
-Bout de prompt système qui marche bien :
+A system-prompt fragment that works well:
 
 ```
-Tu ne demandes JAMAIS une clé API, un token ou un mot de passe directement dans la conversation.
-Quand tu as besoin d'un secret :
-  1. appelle createSecretRequest avec requester, label et purpose (sois précis sur purpose,
-     l'humain le lit pour décider)
-  2. donne UNIQUEMENT le champ "url" à l'utilisateur, jamais poll_token ni encryption_key
-  3. sonde getSecretRequest jusqu'à status == "filled"
-  4. n'appelle revealSecret qu'au moment exact où tu vas t'en servir : le secret est détruit
-     à la lecture
-  5. si opened_count > 1, préviens l'utilisateur que le lien a été ouvert plusieurs fois
-Ne recopie jamais un secret révélé dans ta réponse.
+Never ask for an API key, token or password directly in the conversation.
+When you need a secret:
+  1. call createSecretRequest with requester, label and purpose (be specific about
+     purpose — the human reads it to decide)
+  2. give the user ONLY the "url" field, never poll_token or encryption_key
+  3. poll getSecretRequest until status == "filled"
+  4. only call revealSecret at the exact moment you are going to use the secret:
+     it is destroyed on read
+  5. if opened_count > 1, warn the user that the link was opened several times
+Never echo a revealed secret back in your reply.
 ```
 
 ---
 
-## Ce que ça protège, et ce que ça ne protège pas
+## What this protects, and what it does not
 
-Autant être direct : c'est ça qui compte dans un outil pareil.
+Worth being blunt: on a tool like this, that is the part that matters.
 
-**Protégé**
+**Protected**
 
-- **L'historique de conversation.** Le secret ne transite jamais par Telegram, Discord ou Slack.
-  C'est le gain principal, et il est réel : un chat est persistant, synchronisé, sauvegardé et
-  indexé, alors que ce lien vit quinze minutes.
-- **Le serveur, et une fuite de base.** Le navigateur chiffre en AES-GCM 256 avec une clé qui vit
-  dans le fragment `#` de l'URL — un fragment n'est jamais transmis au serveur. Une copie de la
-  base ne contient que du chiffré inexploitable.
-- **Les logs.** Le journal ne contient que méthode, chemin normalisé, statut et durée. Ni corps,
-  ni en-têtes, ni query string.
-- **Le vol par un lecteur du chat.** Révéler exige le `poll_token`, que seul l'agent détient.
-  Quelqu'un qui lit le lien dans la conversation ne peut pas lire le secret.
-- **La réutilisation.** Un lien accepte une valeur, une seule fois. Le secret se lit une fois.
+- **The conversation history.** The secret never travels through Telegram, Discord
+  or Slack. That is the main win, and it is a real one: a chat is persistent,
+  synced, backed up and searchable, while this link lives fifteen minutes.
+- **The server, and a database leak.** The browser encrypts with AES-GCM 256 using a
+  key that lives in the URL `#` fragment — and a fragment is never sent to the
+  server. A copy of the database contains only unusable ciphertext.
+- **The logs.** Only method, normalised path, status and duration are recorded. No
+  body, no headers, no query string.
+- **Theft by someone reading the chat.** Revealing requires the `poll_token`, which
+  only the agent holds. Someone who sees the link in the conversation cannot read
+  the secret.
+- **Reuse.** A link accepts one value, once. A secret is read once, and the reveal
+  is atomic under concurrency.
 
-**Non protégé**
+**Not protected**
 
-- **Le contexte de l'agent.** Une fois révélé, le secret est dans la fenêtre de contexte du modèle,
-  donc potentiellement dans les logs du fournisseur. C'est la limite structurelle de cette V1.
-  La suite, c'est le mode proxy : l'agent garde un handle, le service injecte le credential dans
-  l'appel HTTP, le modèle ne voit jamais la valeur.
-- **L'injection.** Quelqu'un qui lit le lien avant toi peut remplir le slot avec *sa* valeur, et
-  ton agent travaillera alors sur le compte de l'attaquant. C'est pour ça que `opened_count`,
-  `filled_at` et `filled_from_ip_hash` sont exposés — l'agent doit les surveiller et alerter.
-- **Un agent compromis.** Un agent victime d'une injection de prompt peut générer un lien d'allure
-  légitime pour exfiltrer. La page affiche demandeur, demande et motif **fixés à la création**,
-  mais rien ne remplace la vigilance de l'humain. D'où l'avertissement en bas du formulaire.
-- **Le poste de l'humain.** Keylogger, presse-papier, extension malveillante : hors périmètre.
+- **The agent's context.** Once revealed, the secret is in the model's context
+  window, and therefore possibly in the provider's logs. This is the structural
+  limit of v1; proxy mode closes it (see [ROADMAP.md](ROADMAP.md)).
+- **Not strict zero-knowledge.** The server generates the key and sees it again at
+  reveal time. It never stores it, but it does pass through memory twice.
+- **Injection.** Someone who reads the link before you can fill the slot with
+  *their* value, and your agent would then work against the attacker's account.
+  That is why `opened_count`, `filled_at` and `filled_from_ip_hash` are exposed —
+  the agent should watch them and warn.
+- **A compromised agent.** An agent hit by prompt injection can create a
+  legitimate-looking link. The page pins requester, label and purpose at creation
+  time and the warning box is hard-coded, but nothing replaces human vigilance.
+- **The human's machine.** Keyloggers, clipboard sniffers, malicious extensions:
+  out of scope.
 
-**Traite l'URL comme un porteur.** Elle contient la clé de déchiffrement. TTL court, un seul usage,
-et **HTTPS obligatoire en production** — le serveur émet un avertissement si `BASE_URL` n'est pas en
-`https://`.
+**Treat the URL as a bearer token.** It contains the decryption key. Short TTL,
+single use, and **HTTPS is mandatory in production** — the server warns on startup
+if `BASE_URL` is not `https://`.
+
+### Security posture
+
+An adversarial review of this codebase produced 11 findings. They are tracked in
+[ROADMAP.md](ROADMAP.md) and closed one at a time, each with a test that fails
+before the fix and passes after. Do not run this in production until they are all
+closed.
 
 ---
 
 ## Configuration
 
-| Variable | Défaut | Rôle |
+| Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `8787` | Port d'écoute |
-| `BASE_URL` | `http://localhost:8787` | URL publique, celle mise dans le lien |
-| `API_KEYS` | — | Clés agent acceptées, séparées par des virgules |
-| `DB_PATH` | `./data/chut.db` | Fichier SQLite |
-| `DEFAULT_TTL_SECONDS` | `900` | Durée de vie par défaut |
-| `MAX_TTL_SECONDS` | `86400` | Plafond |
-| `MAX_SECRET_BYTES` | `8192` | Taille max de la valeur |
-| `RATE_LIMIT_PER_MIN` | `60` | Requêtes par minute et par clé API |
-| `IP_HASH_SALT` | — | Sel de hachage des IP (jamais d'IP en clair) |
+| `PORT` | `8787` | Listening port |
+| `BASE_URL` | `http://localhost:8787` | Public URL, the one embedded in the link |
+| `API_KEYS` | — | Accepted agent keys, comma-separated |
+| `DB_PATH` | `./data/chut.db` | SQLite file |
+| `DEFAULT_TTL_SECONDS` | `900` | Default lifetime |
+| `MAX_TTL_SECONDS` | `86400` | Ceiling |
+| `MAX_SECRET_BYTES` | `8192` | Maximum value size |
+| `RATE_LIMIT_PER_MIN` | `60` | Requests per minute per API key |
+| `IP_HASH_SALT` | — | Salt for hashing IPs (raw IPs are never stored) |
 
-Un balayage toutes les 30 s efface le contenu chiffré des demandes expirées et supprime
-définitivement les lignes terminées depuis plus de 7 jours.
+A sweep every 30 s wipes the ciphertext of expired requests and permanently deletes
+rows that finished more than 7 days ago.
 
 ---
 
-## Déploiement
+## Deployment
 
 ```bash
 docker build -t chut .
@@ -214,17 +229,11 @@ docker run -d --name chut -p 8787:8787 \
   chut
 ```
 
-Derrière un reverse proxy TLS. Pense à transmettre `X-Forwarded-For` pour que l'empreinte IP
-de remplissage soit exploitable.
+Put it behind a TLS-terminating reverse proxy. Forward `X-Forwarded-For` so the
+filling IP fingerprint stays meaningful.
 
 ---
 
-## Prochaine étape
-
-Le mode proxy (`POST /proxy/:handle`) : l'agent ne lit plus jamais le secret, il demande au service
-d'exécuter l'appel HTTP avec le credential injecté. C'est ce qui ferme le dernier trou — le secret
-sort complètement de la fenêtre de contexte du modèle.
-
-## Licence
+## License
 
 MIT

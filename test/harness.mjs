@@ -1,20 +1,21 @@
 /**
- * Harnais des tests d'attaque : demarre un serveur isole avec une base neuve,
- * pour que chaque execution parte du meme etat.
+ * Shared harness for the attack suite: boots an isolated server on its own port
+ * with a fresh database, so every run starts from the exact same state.
  */
 import { spawn, execSync } from 'node:child_process'
 import { rmSync, mkdirSync } from 'node:fs'
+import http from 'node:http'
 
 export const PORT = 8801
 export const BASE = `http://localhost:${PORT}`
-export const KEY = 'cle_de_test_principale'
-export const KEY2 = 'cle_de_test_secondaire'
-export const SALT = 'sel_de_test'
+export const KEY = 'primary_test_key'
+export const KEY2 = 'secondary_test_key'
+export const SALT = 'test_salt'
 const DB = process.env.ATTACK_DB ?? './data/attacks.db'
 
 export async function startServer(extraEnv = {}) {
-  // Un serveur oublie d'une execution precedente repondrait a notre place, avec
-  // une autre configuration : on libere le port avant toute chose.
+  // A forgotten server from a previous run would answer in our place with a
+  // different configuration: free the port before anything else.
   try { execSync(`fuser -k ${PORT}/tcp 2>/dev/null || true`) } catch {}
   await new Promise((r) => setTimeout(r, 300))
 
@@ -31,8 +32,8 @@ export async function startServer(extraEnv = {}) {
       DB_PATH: DB,
       API_KEYS: `${KEY},${KEY2}`,
       IP_HASH_SALT: SALT,
-      // Volontairement tres haut : la limitation de debit a son propre test,
-      // sur un serveur dedie. Ailleurs elle ne doit pas polluer les mesures.
+      // Deliberately very high: rate limiting has its own test on a dedicated
+      // server. Everywhere else it must not pollute the measurements.
       RATE_LIMIT_PER_MIN: '100000',
       ...extraEnv,
     },
@@ -40,17 +41,17 @@ export async function startServer(extraEnv = {}) {
   })
 
   for (let i = 0; i < 100; i++) {
-    if (proc.exitCode !== null) throw new Error(`le serveur s'est arrete (code ${proc.exitCode})`)
+    if (proc.exitCode !== null) throw new Error(`server exited (code ${proc.exitCode})`)
     try {
       if ((await fetch(`${BASE}/healthz`)).ok) return proc
     } catch {}
     await new Promise((r) => setTimeout(r, 200))
   }
   proc.kill()
-  throw new Error('le serveur n’a pas demarre')
+  throw new Error('server did not start')
 }
 
-// --- petits utilitaires partages -------------------------------------------
+// --- shared helpers ---------------------------------------------------------
 
 export const api = (path, opts = {}, key = KEY) =>
   fetch(BASE + path, {
@@ -67,12 +68,12 @@ export const createRequest = (body = {}, key = KEY) =>
     '/v1/requests',
     {
       method: 'POST',
-      body: JSON.stringify({ requester: 'Agent de test', label: 'Cle API', ...body }),
+      body: JSON.stringify({ requester: 'Test agent', label: 'API key', ...body }),
     },
     key,
   ).then((r) => r.json())
 
-/** Reproduit le chiffrement que fait le navigateur. */
+/** Reproduces exactly what the browser page does when encrypting. */
 export async function browserEncrypt(keyB64url, plaintext) {
   const b64 = keyB64url.replace(/-/g, '+').replace(/_/g, '/')
   const raw = Uint8Array.from(Buffer.from(b64 + '='.repeat((4 - (b64.length % 4)) % 4), 'base64'))
@@ -94,42 +95,12 @@ export async function fillRequest(created, value, headers = {}) {
   })
 }
 
-// --- rapport ----------------------------------------------------------------
-
-let passed = 0
-let failed = 0
-const failures = []
-
-export function check(name, ok, detail = '') {
-  if (ok) {
-    passed++
-    console.log(`  \x1b[32m✓\x1b[0m ${name}`)
-  } else {
-    failed++
-    failures.push(name)
-    console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? `\n      \x1b[31m→ ${detail}\x1b[0m` : ''}`)
-  }
-}
-
-export function section(title) {
-  console.log(`\n\x1b[1m\x1b[36m${title}\x1b[0m`)
-}
-
-export function report(proc) {
-  proc.kill()
-  const verdict = failed === 0 ? '\x1b[32mTOUT PASSE\x1b[0m' : `\x1b[31m${failed} ECHEC(S)\x1b[0m`
-  console.log(`\n${verdict} — ${passed} reussis, ${failed} echoues\n`)
-  process.exit(failed === 0 ? 0 : 1)
-}
-
-// --- concurrence reelle ------------------------------------------------------
-
-import http from 'node:http'
+// --- real concurrency -------------------------------------------------------
 
 /**
- * Envoie N requetes POST identiques sur N sockets DISTINCTES, ecrites dans le
- * meme tour de boucle. `fetch` mutualise les connexions et serialise les envois,
- * ce qui masque les conditions de course : il faut du http brut avec agent:false.
+ * Fires N identical POSTs on N DISTINCT sockets, written in the same tick.
+ * `fetch` pools connections and serialises the writes, which hides race
+ * conditions entirely — raw http with agent:false is required here.
  */
 export function concurrentPost(path, body, headers = {}, n = 10) {
   const payload = JSON.stringify(body)
@@ -142,7 +113,7 @@ export function concurrentPost(path, body, headers = {}, n = 10) {
             port: PORT,
             path,
             method: 'POST',
-            agent: false, // une socket neuve par requete
+            agent: false, // a fresh socket per request
             headers: {
               'content-type': 'application/json',
               'content-length': Buffer.byteLength(payload),
@@ -164,4 +135,30 @@ export function concurrentPost(path, body, headers = {}, n = 10) {
       }),
     ),
   )
+}
+
+// --- reporting --------------------------------------------------------------
+
+let passed = 0
+let failed = 0
+
+export function check(name, ok, detail = '') {
+  if (ok) {
+    passed++
+    console.log(`  \x1b[32m✓\x1b[0m ${name}`)
+  } else {
+    failed++
+    console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? `\n      \x1b[31m→ ${detail}\x1b[0m` : ''}`)
+  }
+}
+
+export function section(title) {
+  console.log(`\n\x1b[1m\x1b[36m${title}\x1b[0m`)
+}
+
+export function report(proc) {
+  proc.kill()
+  const verdict = failed === 0 ? '\x1b[32mALL PASSING\x1b[0m' : `\x1b[31m${failed} FAILING\x1b[0m`
+  console.log(`\n${verdict} — ${passed} passed, ${failed} failed\n`)
+  process.exit(failed === 0 ? 0 : 1)
 }

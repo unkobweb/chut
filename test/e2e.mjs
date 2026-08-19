@@ -1,9 +1,9 @@
 /**
- * Test de bout en bout du flux complet.
- * Le role du navigateur (chiffrement AES-GCM cote client) est rejoue ici avec
- * la WebCrypto de Node, qui est la meme API que celle du navigateur.
+ * End-to-end test of the full flow.
+ * The browser's role (client-side AES-GCM encryption) is replayed here with
+ * Node's WebCrypto, which is the same API the browser exposes.
  *
- * Usage: node test/e2e.mjs  (le serveur doit tourner sur BASE)
+ * Usage: node test/e2e.mjs  (a server must be running on BASE)
  */
 
 const BASE = process.env.BASE ?? 'http://localhost:8787'
@@ -36,7 +36,7 @@ const api = (path, opts = {}) =>
     },
   })
 
-/** Reproduit exactement ce que fait le JavaScript de la page de saisie. */
+/** Reproduces exactly what the form page's JavaScript does. */
 async function browserEncrypt(keyB64url, plaintext) {
   const b64 = keyB64url.replace(/-/g, '+').replace(/_/g, '/')
   const raw = Uint8Array.from(Buffer.from(b64 + '='.repeat((4 - (b64.length % 4)) % 4), 'base64'))
@@ -55,95 +55,95 @@ async function browserEncrypt(keyB64url, plaintext) {
 
 const SECRET = 'sk-live-7f3a9c2e41b8d605aa1e_TEST'
 
-// ---------------------------------------------------------------- flux nominal
-section('Flux nominal')
+// ------------------------------------------------------------------ happy path
+section('Happy path')
 
 const createRes = await api('/v1/requests', {
   method: 'POST',
   body: JSON.stringify({
-    requester: 'Assistant Telegram',
-    label: 'Cle API Gmail',
-    purpose: 'Lire tes 20 derniers mails pour en faire un resume quotidien',
+    requester: 'Telegram Assistant',
+    label: 'Gmail API key',
+    purpose: 'Read your last 20 emails to build a daily summary',
     ttl_seconds: 300,
   }),
 })
 const created = await createRes.json()
 
-check('POST /v1/requests renvoie 201', createRes.status === 201, `recu ${createRes.status}`)
-check('une url est renvoyee', typeof created.url === 'string')
-check('la cle de chiffrement est dans le fragment', created.url.includes('#'))
+check('POST /v1/requests returns 201', createRes.status === 201, `got ${createRes.status}`)
+check('a url is returned', typeof created.url === 'string')
+check('the encryption key sits in the fragment', created.url.includes('#'))
 check('poll_token present', typeof created.poll_token === 'string')
 check('encryption_key present', typeof created.encryption_key === 'string')
-check('statut initial = pending', created.status === 'pending')
+check('initial status is pending', created.status === 'pending')
 
 const { id, poll_token, encryption_key } = created
 
-// L'humain ouvre la page
+// The human opens the page
 const pageRes = await fetch(`${BASE}/s/${id}`)
 const pageHtml = await pageRes.text()
-check('la page de saisie repond 200', pageRes.status === 200)
-check('la page affiche le demandeur', pageHtml.includes('Assistant Telegram'))
-check('la page affiche le motif', pageHtml.includes('resume quotidien'))
+check('the form page responds 200', pageRes.status === 200)
+check('the page shows the requester', pageHtml.includes('Telegram Assistant'))
+check('the page shows the purpose', pageHtml.includes('daily summary'))
 check(
-  'CSP avec nonce presente',
+  'CSP with a nonce is present',
   (pageRes.headers.get('content-security-policy') ?? '').includes('nonce-'),
 )
-check('page non mise en cache', (pageRes.headers.get('cache-control') ?? '').includes('no-store'))
-check('la cle n’apparait pas dans le HTML', !pageHtml.includes(encryption_key))
+check('the page is not cached', (pageRes.headers.get('cache-control') ?? '').includes('no-store'))
+check('the key never appears in the HTML', !pageHtml.includes(encryption_key))
 
-// L'agent sonde : rien encore
+// The agent polls: nothing yet
 const pollPending = await api(`/v1/requests/${id}`, { headers: { 'x-poll-token': poll_token } })
 const pending = await pollPending.json()
-check('le sondage montre pending', pending.status === 'pending')
-check('l’ouverture de la page est comptee', pending.opened_count === 1)
-check('le sondage ne renvoie aucun secret', !JSON.stringify(pending).includes('ciphertext'))
+check('polling reports pending', pending.status === 'pending')
+check('the page open is counted', pending.opened_count === 1)
+check('polling never returns a secret', !JSON.stringify(pending).includes('ciphertext'))
 
-// Reveler trop tot
+// Revealing too early
 const tooEarly = await api(`/v1/requests/${id}/reveal`, {
   method: 'POST',
   body: JSON.stringify({ poll_token, encryption_key }),
 })
-check('reveler avant remplissage renvoie 409', tooEarly.status === 409)
+check('revealing before filling returns 409', tooEarly.status === 409)
 
-// Le navigateur chiffre puis envoie
+// The browser encrypts, then sends
 const payload = await browserEncrypt(encryption_key, SECRET)
 const fillRes = await fetch(`${BASE}/s/${id}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'user-agent': 'Mozilla/5.0 (test)' },
   body: JSON.stringify(payload),
 })
-check('le remplissage est accepte', fillRes.status === 200, `recu ${fillRes.status}`)
+check('the fill is accepted', fillRes.status === 200, `got ${fillRes.status}`)
 
 const pollFilled = await api(`/v1/requests/${id}`, { headers: { 'x-poll-token': poll_token } })
 const filled = await pollFilled.json()
-check('le sondage montre filled', filled.status === 'filled')
-check('l’horodatage de remplissage est present', typeof filled.filled_at === 'string')
-check('l’empreinte IP est enregistree', typeof filled.filled_from_ip_hash === 'string')
-check('l’IP n’est pas stockee en clair', !String(filled.filled_from_ip_hash).includes('.'))
+check('polling reports filled', filled.status === 'filled')
+check('the fill timestamp is present', typeof filled.filled_at === 'string')
+check('the IP fingerprint is recorded', typeof filled.filled_from_ip_hash === 'string')
+check('the raw IP is never stored', !String(filled.filled_from_ip_hash).includes('.'))
 
-// L'agent revele
+// The agent reveals
 const revealRes = await api(`/v1/requests/${id}/reveal`, {
   method: 'POST',
   body: JSON.stringify({ poll_token, encryption_key }),
 })
 const revealed = await revealRes.json()
-check('la revelation reussit', revealRes.status === 200, JSON.stringify(revealed))
-check('le secret dechiffre est identique a l’original', revealed.secret === SECRET)
-check('le secret est marque brule', revealed.burned === true)
+check('the reveal succeeds', revealRes.status === 200, JSON.stringify(revealed))
+check('the decrypted secret matches the original', revealed.secret === SECRET)
+check('the secret is marked burned', revealed.burned === true)
 
-// Deuxieme revelation impossible
+// A second reveal is impossible
 const secondReveal = await api(`/v1/requests/${id}/reveal`, {
   method: 'POST',
   body: JSON.stringify({ poll_token, encryption_key }),
 })
-check('la seconde revelation est refusee', secondReveal.status === 409)
+check('the second reveal is refused', secondReveal.status === 409)
 
-// Le lien est mort
+// The link is dead
 const deadPage = await fetch(`${BASE}/s/${id}`)
-check('le lien ne repond plus 200', deadPage.status === 410)
+check('the link no longer answers 200', deadPage.status === 410)
 
-// ---------------------------------------------------------------- controles d'acces
-section("Controles d'acces")
+// --------------------------------------------------------------- access control
+section('Access control')
 
 const c2 = await (
   await api('/v1/requests', {
@@ -153,21 +153,21 @@ const c2 = await (
 ).json()
 
 const noAuth = await fetch(`${BASE}/v1/requests/${c2.id}`)
-check('sans cle API : 401', noAuth.status === 401)
+check('no API key: 401', noAuth.status === 401)
 
 const badKey = await fetch(`${BASE}/v1/requests/${c2.id}`, {
   headers: { authorization: 'Bearer mauvaise_cle', 'x-poll-token': c2.poll_token },
 })
-check('mauvaise cle API : 401', badKey.status === 401)
+check('wrong API key: 401', badKey.status === 401)
 
 const noToken = await api(`/v1/requests/${c2.id}`)
-check('sans poll_token : 403', noToken.status === 403)
+check('no poll_token: 403', noToken.status === 403)
 
 const badToken = await api(`/v1/requests/${c2.id}`, { headers: { 'x-poll-token': 'nope' } })
-check('mauvais poll_token : 403', badToken.status === 403)
+check('wrong poll_token: 403', badToken.status === 403)
 
-// Un lecteur du chat peut remplir, mais pas lire.
-const injected = await browserEncrypt(c2.encryption_key, 'cle-de-lattaquant')
+// Someone reading the chat can fill the slot, but cannot read it.
+const injected = await browserEncrypt(c2.encryption_key, 'attacker-supplied-key')
 await fetch(`${BASE}/s/${c2.id}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -178,20 +178,20 @@ const stealAttempt = await api(`/v1/requests/${c2.id}/reveal`, {
   body: JSON.stringify({ poll_token: 'devine', encryption_key: c2.encryption_key }),
 })
 check(
-  'quelqu’un qui a le lien ne peut pas lire le secret (poll_token requis)',
+  'holding the link is not enough to read the secret (poll_token required)',
   stealAttempt.status === 403,
 )
 
-// Mauvaise cle de chiffrement -> echec du dechiffrement
+// Wrong encryption key -> decryption failure
 const wrongKey = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')
 const wrongKeyRes = await api(`/v1/requests/${c2.id}/reveal`, {
   method: 'POST',
   body: JSON.stringify({ poll_token: c2.poll_token, encryption_key: wrongKey }),
 })
-check('mauvaise cle de chiffrement : 400', wrongKeyRes.status === 400)
+check('wrong encryption key: 400', wrongKeyRes.status === 400)
 
-// ---------------------------------------------------------------- usage unique
-section('Usage unique et cycle de vie')
+// ------------------------------------------------------------ single use
+section('Single use and lifecycle')
 
 const c3 = await (
   await api('/v1/requests', {
@@ -199,7 +199,7 @@ const c3 = await (
     body: JSON.stringify({ requester: 'Bot', label: 'Token' }),
   })
 ).json()
-const p3 = await browserEncrypt(c3.encryption_key, 'valeur')
+const p3 = await browserEncrypt(c3.encryption_key, 'value')
 const first = await fetch(`${BASE}/s/${c3.id}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -210,17 +210,17 @@ const second = await fetch(`${BASE}/s/${c3.id}`, {
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify(p3),
 })
-check('premier remplissage accepte', first.status === 200)
-check('second remplissage refuse', second.status === 409)
+check('first fill accepted', first.status === 200)
+check('second fill refused', second.status === 409)
 
-// burn_on_reveal: false -> relisible jusqu'a expiration
+// burn_on_reveal: false -> readable again until expiry
 const c3b = await (
   await api('/v1/requests', {
     method: 'POST',
     body: JSON.stringify({ requester: 'Bot', label: 'Token', burn_on_reveal: false }),
   })
 ).json()
-const p3b = await browserEncrypt(c3b.encryption_key, 'valeur-persistante')
+const p3b = await browserEncrypt(c3b.encryption_key, 'persistent-value')
 await fetch(`${BASE}/s/${c3b.id}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -237,11 +237,11 @@ const r2res = await api(`/v1/requests/${c3b.id}/reveal`, {
   body: JSON.stringify({ poll_token: c3b.poll_token, encryption_key: c3b.encryption_key }),
 })
 const r2 = await r2res.json()
-check('sans burn : premiere lecture ok', r1.secret === 'valeur-persistante')
-check('sans burn : non marque brule', r1.burned === false)
-check('sans burn : seconde lecture encore possible', r2res.status === 200 && r2.secret === 'valeur-persistante', JSON.stringify(r2))
+check('without burn: first read works', r1.secret === 'persistent-value')
+check('without burn: not marked burned', r1.burned === false)
+check('without burn: a second read still works', r2res.status === 200 && r2.secret === 'persistent-value', JSON.stringify(r2))
 
-// Annulation
+// Cancellation
 const c4 = await (
   await api('/v1/requests', {
     method: 'POST',
@@ -252,38 +252,38 @@ const cancelled = await api(`/v1/requests/${c4.id}`, {
   method: 'DELETE',
   headers: { 'x-poll-token': c4.poll_token },
 })
-check('annulation acceptee', cancelled.status === 200)
+check('cancellation accepted', cancelled.status === 200)
 const cancelledPage = await fetch(`${BASE}/s/${c4.id}`)
-check('la page annulee repond 410', cancelledPage.status === 410)
+check('a cancelled page responds 410', cancelledPage.status === 410)
 
-// Expiration
+// Expiry
 const c5 = await (
   await api('/v1/requests', {
     method: 'POST',
     body: JSON.stringify({ requester: 'Bot', label: 'Token', ttl_seconds: 30 }),
   })
 ).json()
-check('TTL minimum accepte', typeof c5.id === 'string')
+check('minimum TTL accepted', typeof c5.id === 'string')
 const badTtl = await api('/v1/requests', {
   method: 'POST',
   body: JSON.stringify({ requester: 'Bot', label: 'Token', ttl_seconds: 5 }),
 })
-check('TTL trop court refuse', badTtl.status === 400)
+check('too-short TTL refused', badTtl.status === 400)
 
-// ---------------------------------------------------------------- validation
-section('Validation des entrees')
+// -------------------------------------------------------------- validation
+section('Input validation')
 
 const noLabel = await api('/v1/requests', {
   method: 'POST',
   body: JSON.stringify({ requester: 'Bot' }),
 })
-check('label manquant : 400', noLabel.status === 400)
+check('missing label: 400', noLabel.status === 400)
 
 const noRequester = await api('/v1/requests', {
   method: 'POST',
   body: JSON.stringify({ label: 'Token' }),
 })
-check('requester manquant : 400', noRequester.status === 400)
+check('missing requester: 400', noRequester.status === 400)
 
 const xss = await (
   await api('/v1/requests', {
@@ -292,16 +292,16 @@ const xss = await (
   })
 ).json()
 const xssPage = await (await fetch(`${BASE}/s/${xss.id}`)).text()
-check('le HTML injecte est echappe', !xssPage.includes('<script>alert(1)</script>'))
-check('la valeur echappee est bien affichee', xssPage.includes('&lt;script&gt;'))
+check('injected HTML is escaped', !xssPage.includes('<script>alert(1)</script>'))
+check('the escaped value is still rendered', xssPage.includes('&lt;script&gt;'))
 
 const notFound = await fetch(`${BASE}/s/inexistant`)
-check('lien inconnu : 404', notFound.status === 404)
+check('unknown link: 404', notFound.status === 404)
 
 const spec = await (await fetch(`${BASE}/openapi.json`)).json()
-check('openapi.json est servi', spec.openapi === '3.1.0')
-check('la spec declare les 3 chemins', Object.keys(spec.paths).length >= 3)
+check('openapi.json is served', spec.openapi === '3.1.0')
+check('the spec declares all three paths', Object.keys(spec.paths).length >= 3)
 
 // ----------------------------------------------------------------
-console.log(`\n\x1b[1m${passed} reussis, ${failed} echoues\x1b[0m\n`)
+console.log(`\n\x1b[1m${passed} passed, ${failed} failed\x1b[0m\n`)
 process.exit(failed === 0 ? 0 : 1)

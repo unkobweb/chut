@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 function env(name: string, fallback?: string): string {
   const v = process.env[name]
   if (v === undefined || v === '') {
-    if (fallback === undefined) throw new Error(`Variable d'environnement manquante: ${name}`)
+    if (fallback === undefined) throw new Error(`Missing environment variable: ${name}`)
     return fallback
   }
   return v
@@ -13,7 +13,7 @@ function envInt(name: string, fallback: number): number {
   const raw = process.env[name]
   if (raw === undefined || raw === '') return fallback
   const n = Number.parseInt(raw, 10)
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`${name} doit etre un entier positif`)
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`${name} must be a positive integer`)
   return n
 }
 
@@ -22,9 +22,9 @@ const apiKeys = env('API_KEYS', 'dev_change_me')
   .map((k) => k.trim())
   .filter(Boolean)
 
-if (apiKeys.length === 0) throw new Error('API_KEYS ne peut pas etre vide')
+if (apiKeys.length === 0) throw new Error('API_KEYS cannot be empty')
 
-/** On ne garde jamais les cles API en clair en memoire, seulement leur SHA-256. */
+/** API keys are never held in plaintext, only as SHA-256 digests. */
 export const API_KEY_HASHES = new Set(
   apiKeys.map((k) => createHash('sha256').update(k).digest('hex')),
 )

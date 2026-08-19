@@ -81,6 +81,10 @@ export const queries = {
      WHERE id = @id
   `),
 
+  /**
+   * The `status = 'pending'` guard is what makes filling single-use under
+   * concurrency. Callers must check `info.changes`, not a prior read.
+   */
   fill: db.prepare(`
     UPDATE requests
        SET status = 'filled',
@@ -93,8 +97,8 @@ export const queries = {
   `),
 
   /**
-   * burn_on_reveal = false : on note la lecture mais la demande reste 'filled',
-   * donc relisible jusqu'a expiration (utile si l'agent redemarre en cours de tache).
+   * burn_on_reveal = false: record the read but keep the request 'filled', so it
+   * stays readable until expiry (useful when an agent restarts mid-task).
    */
   markRevealed: db.prepare(`
     UPDATE requests SET revealed_at = COALESCE(revealed_at, @now)
@@ -102,9 +106,11 @@ export const queries = {
   `),
 
   /**
-   * La garde `status = 'filled'` n'est pas decorative : c'est ELLE qui arbitre la
-   * course. SQLite garantit qu'un seul UPDATE concurrent modifiera la ligne, donc
-   * un seul appelant obtiendra changes === 1 et aura le droit de rendre le secret.
+   * The `status = 'filled'` guard is not decorative: it is what arbitrates the
+   * race. SQLite guarantees a single concurrent UPDATE will touch the row, so
+   * exactly one caller sees changes === 1 and earns the right to return the
+   * secret. Without it, N concurrent reveals all succeed and the burn stops
+   * working as an intrusion detector.
    */
   burn: db.prepare(`
     UPDATE requests
@@ -118,21 +124,24 @@ export const queries = {
      WHERE id = @id AND status IN ('pending','filled')
   `),
 
-  /** Purge du contenu chiffre des demandes expirees. Les metadonnees restent pour l'audit. */
+  /** Wipes ciphertext of expired requests. Metadata is kept for auditing. */
   expireStale: db.prepare(`
     UPDATE requests
        SET status = 'expired', ciphertext = NULL, iv = NULL
      WHERE expires_at <= @now AND status IN ('pending','filled')
   `),
 
-  /** Suppression definitive des lignes terminees depuis longtemps. */
+  /** Permanently removes rows that finished long ago. */
   purgeOld: db.prepare(`
     DELETE FROM requests
      WHERE status IN ('revealed','expired','cancelled') AND expires_at <= @cutoff
   `),
 }
 
-/** Une demande expiree reste 'pending' en base jusqu'au prochain balayage: on corrige a la lecture. */
+/**
+ * An expired request stays 'pending' in the database until the next sweep, so we
+ * correct it on read. Correctness comes from here, not from the sweeper.
+ */
 export function effectiveStatus(row: RequestRow, now = Date.now()): RequestRow['status'] {
   if ((row.status === 'pending' || row.status === 'filled') && row.expires_at <= now) return 'expired'
   return row.status

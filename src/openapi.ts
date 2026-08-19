@@ -1,24 +1,24 @@
 import { config } from './config.js'
 
 /**
- * Spec volontairement descriptive: elle est destinee a etre chargee telle quelle
- * comme definition d'outil par un agent.
+ * Deliberately verbose: this spec is meant to be loaded as-is as a tool
+ * definition by an agent, so the descriptions are written for the model.
  */
 export const openapi = {
   openapi: '3.1.0',
   info: {
-    title: 'chut — demande de secret',
+    title: 'chut — secret request',
     version: '0.1.0',
     description:
-      "Permet a un agent de reclamer un secret (cle API, token, mot de passe) a son humain " +
-      "sans que la valeur transite par le fil de conversation. L'agent cree une demande, " +
-      "transmet l'URL a son humain, sonde jusqu'a ce qu'elle soit remplie, puis la revele une fois.",
+      'Lets an agent request a secret (API key, token, password) from its human without ' +
+      'the value ever travelling through the conversation. The agent creates a request, ' +
+      'hands the URL to its human, polls until it is filled, then reveals it once.',
   },
   servers: [{ url: config.baseUrl }],
   security: [{ bearerAuth: [] }],
   components: {
     securitySchemes: {
-      bearerAuth: { type: 'http', scheme: 'bearer', description: 'Cle API du service.' },
+      bearerAuth: { type: 'http', scheme: 'bearer', description: 'Service API key.' },
     },
     schemas: {
       Request: {
@@ -29,8 +29,8 @@ export const openapi = {
             type: 'string',
             enum: ['pending', 'filled', 'revealed', 'expired', 'cancelled'],
             description:
-              "pending: en attente de l'humain. filled: pret a etre revele. " +
-              'revealed: deja lu. expired / cancelled: termine.',
+              'pending: waiting on the human. filled: ready to be revealed. ' +
+              'revealed: already read. expired / cancelled: finished.',
           },
           requester: { type: 'string' },
           label: { type: 'string' },
@@ -43,14 +43,14 @@ export const openapi = {
           opened_count: {
             type: 'integer',
             description:
-              'Nombre d’ouvertures de la page. Superieur a 1 = le lien a ete vu plusieurs fois, ' +
-              'a signaler a l’humain.',
+              'How many times the page was opened. Greater than 1 means the link was seen ' +
+              'several times — worth flagging to the human.',
           },
           first_opened_at: { type: ['string', 'null'], format: 'date-time' },
           filled_at: { type: ['string', 'null'], format: 'date-time' },
           filled_from_ip_hash: {
             type: ['string', 'null'],
-            description: 'Empreinte salee de l’IP de remplissage. Jamais l’IP en clair.',
+            description: 'Salted fingerprint of the filling IP. Never the raw IP.',
           },
           filled_user_agent: { type: ['string', 'null'] },
           revealed_at: { type: ['string', 'null'], format: 'date-time' },
@@ -66,11 +66,11 @@ export const openapi = {
     '/v1/requests': {
       post: {
         operationId: 'createSecretRequest',
-        summary: 'Creer une demande de secret et obtenir le lien a envoyer a l’humain',
+        summary: 'Create a secret request and get the link to send to the human',
         description:
-          'Renvoie une url a transmettre a l’humain, plus poll_token et encryption_key ' +
-          'que l’agent doit conserver: les deux sont necessaires pour lire le secret. ' +
-          'Ne jamais afficher poll_token ni encryption_key a l’utilisateur.',
+          'Returns a url to hand to the human, plus poll_token and encryption_key that the ' +
+          'agent must keep: both are required to read the secret. Never show poll_token or ' +
+          'encryption_key to the user.',
         requestBody: {
           required: true,
           content: {
@@ -82,17 +82,17 @@ export const openapi = {
                   requester: {
                     type: 'string',
                     maxLength: 80,
-                    description: 'Qui demande, tel que l’humain le verra. Ex: "Assistant Telegram".',
+                    description: 'Who is asking, as the human will see it. E.g. "Telegram Assistant".',
                   },
                   label: {
                     type: 'string',
                     maxLength: 120,
-                    description: 'Ce qui est demande. Ex: "Cle API Gmail".',
+                    description: 'What is being asked for. E.g. "Gmail API key".',
                   },
                   purpose: {
                     type: 'string',
                     maxLength: 400,
-                    description: 'Pourquoi. Affiche a l’humain pour qu’il puisse juger.',
+                    description: 'Why. Shown to the human so they can judge for themselves.',
                   },
                   ttl_seconds: {
                     type: 'integer',
@@ -103,7 +103,7 @@ export const openapi = {
                   burn_on_reveal: {
                     type: 'boolean',
                     default: true,
-                    description: 'Si vrai, le secret est detruit des la premiere lecture.',
+                    description: 'If true, the secret is destroyed on first read.',
                   },
                 },
               },
@@ -112,7 +112,7 @@ export const openapi = {
         },
         responses: {
           '201': {
-            description: 'Demande creee',
+            description: 'Request created',
             content: {
               'application/json': {
                 schema: {
@@ -130,16 +130,16 @@ export const openapi = {
               },
             },
           },
-          '400': { description: 'Requete invalide' },
-          '401': { description: 'Cle API manquante ou inconnue' },
-          '429': { description: 'Trop de demandes' },
+          '400': { description: 'Invalid request' },
+          '401': { description: 'Missing or unknown API key' },
+          '429': { description: 'Too many requests' },
         },
       },
     },
     '/v1/requests/{id}': {
       get: {
         operationId: 'getSecretRequest',
-        summary: 'Consulter l’etat d’une demande (ne renvoie jamais le secret)',
+        summary: 'Check the state of a request (never returns the secret)',
         parameters: [
           { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
           {
@@ -147,35 +147,35 @@ export const openapi = {
             in: 'header',
             required: true,
             schema: { type: 'string' },
-            description: 'Le poll_token recu a la creation.',
+            description: 'The poll_token received on creation.',
           },
         ],
         responses: {
           '200': {
-            description: 'Etat courant',
+            description: 'Current state',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Request' } } },
           },
-          '403': { description: 'poll_token invalide' },
-          '404': { description: 'Introuvable' },
+          '403': { description: 'Invalid poll_token' },
+          '404': { description: 'Not found' },
         },
       },
       delete: {
         operationId: 'cancelSecretRequest',
-        summary: 'Annuler une demande et effacer son contenu',
+        summary: 'Cancel a request and wipe its contents',
         parameters: [
           { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
           { name: 'X-Poll-Token', in: 'header', required: true, schema: { type: 'string' } },
         ],
-        responses: { '200': { description: 'Annulee' }, '404': { description: 'Introuvable' } },
+        responses: { '200': { description: 'Cancelled' }, '404': { description: 'Not found' } },
       },
     },
     '/v1/requests/{id}/reveal': {
       post: {
         operationId: 'revealSecret',
-        summary: 'Lire le secret une fois la demande remplie',
+        summary: 'Read the secret once the request has been filled',
         description:
-          'A n’appeler que lorsque status vaut "filled". Par defaut le secret est detruit ' +
-          'immediatement apres cette lecture: ne l’appelle qu’au moment ou tu vas t’en servir.',
+          'Only call this when status is "filled". By default the secret is destroyed ' +
+          'immediately after this read: call it only at the moment you are going to use it.',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
           required: true,
@@ -194,7 +194,7 @@ export const openapi = {
         },
         responses: {
           '200': {
-            description: 'Secret en clair',
+            description: 'Plaintext secret',
             content: {
               'application/json': {
                 schema: {
@@ -209,12 +209,17 @@ export const openapi = {
               },
             },
           },
-          '409': { description: 'La demande n’est pas encore remplie' },
+          '409': { description: 'The request is not filled yet' },
         },
       },
     },
     '/healthz': {
-      get: { operationId: 'health', summary: 'Sonde de sante', security: [], responses: { '200': { description: 'ok' } } },
+      get: {
+        operationId: 'health',
+        summary: 'Health probe',
+        security: [],
+        responses: { '200': { description: 'ok' } },
+      },
     },
   },
 } as const

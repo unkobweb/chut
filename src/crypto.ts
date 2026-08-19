@@ -14,7 +14,11 @@ export function randomToken(bytes = 32): string {
   return b64url(randomBytes(bytes))
 }
 
-/** Identifiant de demande: court, lisible, sans caractere ambigu. */
+/**
+ * Request id: short, readable, free of look-alike characters.
+ * The alphabet has exactly 32 entries and 256 % 32 === 0, so the modulo
+ * introduces no bias. Do not extend the alphabet without revisiting that.
+ */
 export function newRequestId(): string {
   const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789'
   const raw = randomBytes(16)
@@ -27,7 +31,7 @@ export function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex')
 }
 
-/** Comparaison a temps constant de deux chaines hexadecimales de meme longueur. */
+/** Constant-time comparison of two hex strings of equal length. */
 export function safeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   try {
@@ -38,9 +42,9 @@ export function safeEqualHex(a: string, b: string): boolean {
 }
 
 /**
- * Dechiffre ce que le navigateur a chiffre en AES-GCM 256.
- * La cle vient de l'agent (fragment d'URL), jamais du stockage: une copie
- * de la base de donnees seule ne permet pas de lire les secrets.
+ * Decrypts what the browser encrypted with AES-GCM 256.
+ * The key comes from the agent (URL fragment), never from storage: a database
+ * dump on its own is not enough to read any secret.
  */
 export async function decryptSecret(
   keyB64url: string,
@@ -48,7 +52,7 @@ export async function decryptSecret(
   ivB64: string,
 ): Promise<string> {
   const keyBytes = fromB64url(keyB64url)
-  if (keyBytes.length !== 32) throw new Error('Cle invalide: 32 octets attendus')
+  if (keyBytes.length !== 32) throw new Error('Invalid key: expected 32 bytes')
 
   const key = await subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt'])
   const plain = await subtle.decrypt(
@@ -59,7 +63,7 @@ export async function decryptSecret(
   return new TextDecoder().decode(plain)
 }
 
-/** Cle AES-256 destinee au fragment d'URL. Le serveur ne la conserve jamais. */
+/** AES-256 key destined for the URL fragment. The server never persists it. */
 export function newEncryptionKey(): string {
   return b64url(randomBytes(32))
 }

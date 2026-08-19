@@ -11,14 +11,16 @@ import { pub } from './public.js'
 const app = new Hono()
 
 /**
- * Journalisation volontairement minimale: methode, chemin, statut, duree.
- * Ni corps de requete, ni en-tetes, ni query string — un secret ne doit jamais
- * pouvoir atterrir dans un fichier de log.
+ * Deliberately minimal logging: method, path, status, duration.
+ * No request body, no headers, no query string — a secret must never be able to
+ * land in a log file. The path is normalised so request ids stay out too.
  */
 app.use('*', async (c, next) => {
   const started = Date.now()
   await next()
-  const path = c.req.path.replace(/^\/s\/[^/]+/, '/s/:id').replace(/^\/v1\/requests\/[^/]+/, '/v1/requests/:id')
+  const path = c.req.path
+    .replace(/^\/s\/[^/]+/, '/s/:id')
+    .replace(/^\/v1\/requests\/[^/]+/, '/v1/requests/:id')
   console.log(`${c.req.method} ${path} ${c.res.status} ${Date.now() - started}ms`)
 })
 
@@ -38,24 +40,24 @@ app.route('/', pub)
 app.notFound((c) => c.json({ error: 'not_found' }, 404))
 
 app.onError((err, c) => {
-  console.error(`Erreur non geree: ${err.message}`)
-  return c.json({ error: 'internal_error', message: 'Erreur interne.' }, 500)
+  console.error(`Unhandled error: ${err.message}`)
+  return c.json({ error: 'internal_error', message: 'Internal error.' }, 500)
 })
 
 startSweeper()
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`chut ecoute sur http://localhost:${info.port}  (public: ${config.baseUrl})`)
+  console.log(`chut is listening on http://localhost:${info.port}  (public: ${config.baseUrl})`)
   if (IS_INSECURE_DEFAULT) {
     console.warn(
-      '\n  ATTENTION: valeurs par defaut detectees (API_KEYS et/ou IP_HASH_SALT).\n' +
-        '  Ne deploie pas en l\'etat. Voir .env.example.\n',
+      '\n  WARNING: default values detected (API_KEYS and/or IP_HASH_SALT).\n' +
+        '  Do not deploy as-is. See .env.example.\n',
     )
   }
   if (config.baseUrl.startsWith('http://') && !config.baseUrl.includes('localhost')) {
     console.warn(
-      "  ATTENTION: BASE_URL n'est pas en HTTPS. La cle de chiffrement circule dans l'URL:\n" +
-        '  sers ce service derriere TLS en production.\n',
+      '  WARNING: BASE_URL is not HTTPS. The encryption key travels inside the URL:\n' +
+        '  serve this behind TLS in production.\n',
     )
   }
 })

@@ -54,7 +54,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;colo
 
 function shell(title: string, nonce: string, body: string, script = ''): string {
   return `<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -79,20 +79,20 @@ export function renderClosed(nonce: string, opts: { title: string; message: stri
     nonce,
     `<h1>${escapeHtml(opts.title)}</h1>
      <p class="sub">${escapeHtml(opts.message)}</p>
-     <div class="foot">Si tu penses que c'est une erreur, redemande un nouveau lien a ton agent.
-     Un lien chut est a usage unique et a duree limitee.</div>`,
+     <div class="foot">If you think this is a mistake, ask your agent for a new link.
+     A chut link is single-use and short-lived.</div>`,
   )
 }
 
 export function renderSuccess(nonce: string, label: string): string {
   return shell(
-    'Secret transmis',
+    'Secret delivered',
     nonce,
     `<div class="ok-icon">&#10003;</div>
-     <h1>C'est transmis</h1>
-     <p class="sub">${escapeHtml(label)} a ete chiffre dans ton navigateur puis envoye.
-     L'agent peut maintenant le recuperer, une seule fois.</p>
-     <div class="foot">Tu peux fermer cet onglet. Ce lien ne fonctionnera plus.</div>`,
+     <h1>Delivered</h1>
+     <p class="sub">${escapeHtml(label)} was encrypted in your browser and sent.
+     The agent can now retrieve it, once.</p>
+     <div class="foot">You can close this tab. This link will not work again.</div>`,
   )
 }
 
@@ -108,39 +108,39 @@ export function renderForm(
   },
 ): string {
   const body = `
-  <h1>${escapeHtml(req.requester)} demande&nbsp;: ${escapeHtml(req.label)}</h1>
-  <p class="sub">Colle la valeur ci-dessous. Elle est chiffree dans ton navigateur avant
-  d'etre envoyee&nbsp;: le serveur ne la voit jamais en clair.</p>
+  <h1>${escapeHtml(req.requester)} is asking for: ${escapeHtml(req.label)}</h1>
+  <p class="sub">Paste the value below. It is encrypted in your browser before being sent:
+  the server never sees it in plaintext.</p>
 
   <div class="meta">
-    <div class="row"><span class="k">Demandeur</span><span class="v">${escapeHtml(req.requester)}</span></div>
-    <div class="row"><span class="k">Demande</span><span class="v">${escapeHtml(req.label)}</span></div>
-    ${req.purpose ? `<div class="row"><span class="k">Motif</span><span class="v">${escapeHtml(req.purpose)}</span></div>` : ''}
-    <div class="row"><span class="k">Expire dans</span><span class="v" id="countdown">&mdash;</span></div>
+    <div class="row"><span class="k">Requested by</span><span class="v">${escapeHtml(req.requester)}</span></div>
+    <div class="row"><span class="k">Asking for</span><span class="v">${escapeHtml(req.label)}</span></div>
+    ${req.purpose ? `<div class="row"><span class="k">Purpose</span><span class="v">${escapeHtml(req.purpose)}</span></div>` : ''}
+    <div class="row"><span class="k">Expires in</span><span class="v" id="countdown">&mdash;</span></div>
   </div>
 
   <form id="form">
-    <label for="secret">Valeur a transmettre</label>
+    <label for="secret">Value to send</label>
     <div class="field">
       <textarea id="secret" spellcheck="false" autocapitalize="off" autocorrect="off"
         autocomplete="off" placeholder="sk-..." required></textarea>
     </div>
-    <button type="button" class="toggle" id="toggle">Masquer la saisie</button>
-    <button type="submit" class="primary" id="submit">Envoyer de maniere chiffree</button>
+    <button type="button" class="toggle" id="toggle">Hide input</button>
+    <button type="submit" class="primary" id="submit">Send encrypted</button>
   </form>
 
   <div class="err hidden" id="error"></div>
 
   <div class="warn">
-    Ne remplis ce formulaire que si tu <strong>attendais</strong> cette demande.
-    Personne de legitime ne te demandera un mot de passe principal ni un code de recuperation
-    par ce biais. En cas de doute, ferme cet onglet.
+    Only fill this form if you were <strong>expecting</strong> this request.
+    No legitimate service will ask you for a master password or a recovery code
+    this way. When in doubt, close this tab.
   </div>
 
   <div class="foot">
-    Chiffrement AES-GCM 256 effectue dans ton navigateur. La cle vit dans le fragment
-    <code>#</code> de l'URL, que ton navigateur n'envoie jamais au serveur.
-    Le serveur ne stocke que du contenu chiffre.
+    AES-GCM 256 encryption performed in your browser. The key lives in the URL
+    <code>#</code> fragment, which your browser never sends to the server.
+    The server only ever stores ciphertext.
   </div>`
 
   const script = `
@@ -161,10 +161,10 @@ export function renderForm(
     errorBox.classList.remove('hidden');
   }
 
-  // La cle de chiffrement vit uniquement dans le fragment: jamais transmise au serveur.
+  // The encryption key lives only in the fragment: never sent to the server.
   var rawKey = location.hash.slice(1);
   if (!rawKey) {
-    fail("Lien incomplet: la cle de chiffrement manque. Le lien a probablement ete tronque lors de la copie. Redemande-en un.");
+    fail("Incomplete link: the encryption key is missing. The link was probably truncated when copied. Ask for a new one.");
     submit.disabled = true;
     input.disabled = true;
   }
@@ -172,7 +172,7 @@ export function renderForm(
   function tick() {
     var left = Math.max(0, Math.round((EXPIRES - Date.now()) / 1000));
     if (left <= 0) {
-      countdown.textContent = 'expire';
+      countdown.textContent = 'expired';
       submit.disabled = true;
       input.disabled = true;
       return;
@@ -188,7 +188,7 @@ export function renderForm(
     masked = !masked;
     input.style.webkitTextSecurity = masked ? 'disc' : 'none';
     input.style.textSecurity = masked ? 'disc' : 'none';
-    toggle.textContent = masked ? 'Afficher la saisie' : 'Masquer la saisie';
+    toggle.textContent = masked ? 'Show input' : 'Hide input';
   });
 
   function b64(buf) {
@@ -210,12 +210,12 @@ export function renderForm(
     errorBox.classList.add('hidden');
 
     var value = input.value;
-    if (!value) return fail('Le champ est vide.');
+    if (!value) return fail('The field is empty.');
     if (new TextEncoder().encode(value).length > MAX_BYTES)
-      return fail('Valeur trop longue (maximum ' + MAX_BYTES + ' octets).');
+      return fail('Value too long (maximum ' + MAX_BYTES + ' bytes).');
 
     submit.disabled = true;
-    submit.textContent = 'Chiffrement...';
+    submit.textContent = 'Encrypting...';
 
     var iv = crypto.getRandomValues(new Uint8Array(12));
 
@@ -229,7 +229,7 @@ export function renderForm(
         );
       })
       .then(function (ct) {
-        submit.textContent = 'Envoi...';
+        submit.textContent = 'Sending...';
         return fetch('/s/' + ID, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -240,19 +240,20 @@ export function renderForm(
         return res.json().then(function (data) { return { ok: res.ok, data: data }; });
       })
       .then(function (r) {
-        if (!r.ok) throw new Error(r.data && r.data.message ? r.data.message : 'Envoi refuse.');
+        if (!r.ok) throw new Error(r.data && r.data.message ? r.data.message : 'Submission refused.');
         input.value = '';
+        // replace() rather than assign(): drops the key-bearing URL from history.
         location.replace('/s/' + ID + '/done');
       })
       .catch(function (err) {
         submit.disabled = false;
-        submit.textContent = 'Envoyer de maniere chiffree';
-        fail(err && err.message ? err.message : 'Une erreur est survenue.');
+        submit.textContent = 'Send encrypted';
+        fail(err && err.message ? err.message : 'Something went wrong.');
       });
   });
 })();`
 
-  return shell(`${req.requester} demande un secret`, nonce, body, script)
+  return shell(`${req.requester} is asking for a secret`, nonce, body, script)
 }
 
 export function renderIndex(nonce: string): string {
@@ -260,13 +261,13 @@ export function renderIndex(nonce: string): string {
     'chut',
     nonce,
     `<h1>chut</h1>
-     <p class="sub">Un agent IA demande un secret a son humain via un lien ephemere.
-     Le secret est chiffre dans le navigateur&nbsp;: le serveur ne le voit jamais en clair.</p>
+     <p class="sub">An AI agent asks its human for a secret through a short-lived link.
+     The secret is encrypted in the browser: the server never sees it in plaintext.</p>
      <div class="meta">
        <div class="row"><span class="k">API</span><span class="v"><code>POST /v1/requests</code></span></div>
        <div class="row"><span class="k">Spec</span><span class="v"><code>${escapeHtml(config.baseUrl)}/openapi.json</code></span></div>
-       <div class="row"><span class="k">Sante</span><span class="v"><code>/healthz</code></span></div>
+       <div class="row"><span class="k">Health</span><span class="v"><code>/healthz</code></span></div>
      </div>
-     <div class="foot">Il n'y a rien a voir ici sans un lien de demande valide.</div>`,
+     <div class="foot">There is nothing to see here without a valid request link.</div>`,
   )
 }

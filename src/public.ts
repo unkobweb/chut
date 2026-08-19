@@ -9,12 +9,7 @@ export const pub = new Hono()
 
 const nonce = () => randomBytes(16).toString('base64')
 
-function secureHtml(
-  c: Context,
-  html: string,
-  n: string,
-  status: 200 | 404 | 410 = 200,
-) {
+function secureHtml(c: Context, html: string, n: string, status: 200 | 404 | 410 = 200) {
   c.header('Content-Type', 'text/html; charset=utf-8')
   c.header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
   c.header('Referrer-Policy', 'no-referrer')
@@ -43,24 +38,24 @@ function clientIp(c: Context): string {
 
 const CLOSED_COPY: Record<string, { title: string; message: string }> = {
   filled: {
-    title: 'Deja rempli',
-    message: 'Ce lien a deja recu une valeur. Un lien chut ne sert qu’une fois.',
+    title: 'Already filled',
+    message: 'This link already received a value. A chut link is single-use.',
   },
   revealed: {
-    title: 'Deja utilise',
-    message: 'La valeur a ete transmise a l’agent et ce lien est desormais inactif.',
+    title: 'Already used',
+    message: 'The value was handed to the agent and this link is now inactive.',
   },
   expired: {
-    title: 'Lien expire',
-    message: 'Ce lien a depasse sa duree de validite et ne peut plus recevoir de valeur.',
+    title: 'Link expired',
+    message: 'This link is past its validity window and can no longer receive a value.',
   },
   cancelled: {
-    title: 'Demande annulee',
-    message: 'L’agent a annule cette demande avant qu’elle ne soit remplie.',
+    title: 'Request cancelled',
+    message: 'The agent cancelled this request before it was filled.',
   },
 }
 
-/** Page de saisie presentee a l'humain. */
+/** The form shown to the human. */
 pub.get('/s/:id', (c) => {
   const n = nonce()
   const row = queries.byId.get(c.req.param('id'))
@@ -68,8 +63,8 @@ pub.get('/s/:id', (c) => {
     return secureHtml(
       c,
       renderClosed(n, {
-        title: 'Lien introuvable',
-        message: 'Ce lien n’existe pas, ou il a ete purge depuis longtemps.',
+        title: 'Link not found',
+        message: 'This link does not exist, or it was purged a long time ago.',
       }),
       n,
       404,
@@ -81,7 +76,7 @@ pub.get('/s/:id', (c) => {
     return secureHtml(c, renderClosed(n, CLOSED_COPY[status]!), n, 410)
   }
 
-  // Trace d'ouverture: l'agent peut la lire et signaler un lien ouvert plusieurs fois.
+  // Open trace: the agent can read this and warn about a link opened several times.
   queries.markOpened.run({ id: row.id, now: Date.now() })
 
   return secureHtml(
@@ -98,15 +93,15 @@ pub.get('/s/:id', (c) => {
   )
 })
 
-/** Reception du contenu deja chiffre par le navigateur. */
+/** Receives the payload already encrypted by the browser. */
 pub.post('/s/:id', async (c) => {
   const row = queries.byId.get(c.req.param('id'))
-  if (!row) return c.json({ error: 'not_found', message: 'Lien introuvable.' }, 404)
+  if (!row) return c.json({ error: 'not_found', message: 'Link not found.' }, 404)
 
   const status = effectiveStatus(row)
   if (status !== 'pending') {
     return c.json(
-      { error: 'not_pending', status, message: CLOSED_COPY[status]?.message ?? 'Lien inactif.' },
+      { error: 'not_pending', status, message: CLOSED_COPY[status]?.message ?? 'Inactive link.' },
       409,
     )
   }
@@ -115,19 +110,19 @@ pub.post('/s/:id', async (c) => {
   try {
     body = (await c.req.json()) as typeof body
   } catch {
-    return c.json({ error: 'invalid_request', message: 'Corps JSON invalide.' }, 400)
+    return c.json({ error: 'invalid_request', message: 'Invalid JSON body.' }, 400)
   }
 
   const { ciphertext, iv } = body
   if (typeof ciphertext !== 'string' || typeof iv !== 'string' || !ciphertext || !iv) {
-    return c.json({ error: 'invalid_request', message: '"ciphertext" et "iv" sont requis.' }, 400)
+    return c.json({ error: 'invalid_request', message: '"ciphertext" and "iv" are required.' }, 400)
   }
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext) || !/^[A-Za-z0-9+/]+={0,2}$/.test(iv)) {
-    return c.json({ error: 'invalid_request', message: 'Encodage base64 attendu.' }, 400)
+    return c.json({ error: 'invalid_request', message: 'Base64 encoding expected.' }, 400)
   }
-  // +~40% pour l'encodage base64 et le tag d'authentification GCM.
+  // +~40% for base64 encoding and the GCM authentication tag.
   if (Buffer.byteLength(ciphertext, 'utf8') > config.maxSecretBytes * 2) {
-    return c.json({ error: 'too_large', message: 'Valeur trop longue.' }, 413)
+    return c.json({ error: 'too_large', message: 'Value too long.' }, 413)
   }
 
   const info = queries.fill.run({
@@ -139,23 +134,23 @@ pub.post('/s/:id', async (c) => {
     user_agent: (c.req.header('user-agent') ?? '').slice(0, 200) || null,
   })
 
-  // 0 ligne modifiee = quelqu'un d'autre a rempli entre la lecture et l'ecriture.
+  // 0 rows changed = somebody else filled it between our read and our write.
   if (info.changes === 0) {
-    return c.json({ error: 'not_pending', message: 'Ce lien vient d’etre utilise.' }, 409)
+    return c.json({ error: 'not_pending', message: 'This link has just been used.' }, 409)
   }
 
   c.header('Cache-Control', 'no-store')
   return c.json({ ok: true, id: row.id })
 })
 
-/** Confirmation apres envoi. */
+/** Confirmation shown after a successful submission. */
 pub.get('/s/:id/done', (c) => {
   const n = nonce()
   const row = queries.byId.get(c.req.param('id'))
   if (!row) {
     return secureHtml(
       c,
-      renderClosed(n, { title: 'Lien introuvable', message: 'Ce lien n’existe pas.' }),
+      renderClosed(n, { title: 'Link not found', message: 'This link does not exist.' }),
       n,
       404,
     )

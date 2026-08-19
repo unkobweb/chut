@@ -1,6 +1,6 @@
 /**
- * Verification dans un vrai navigateur: c'est le JavaScript de la page qui
- * chiffre, pas le script de test. Produit aussi des captures d'ecran.
+ * Verification in a real browser: the page's own JavaScript does the encrypting,
+ * not the test script. Also produces screenshots.
  *
  * Usage: node test/browser.mjs
  */
@@ -30,9 +30,9 @@ const created = await (
   await api('/v1/requests', {
     method: 'POST',
     body: JSON.stringify({
-      requester: 'Assistant Telegram',
-      label: 'Cle API Gmail',
-      purpose: 'Lire tes 20 derniers mails pour te faire un resume chaque matin',
+      requester: 'Telegram Assistant',
+      label: 'Gmail API key',
+      purpose: 'Read your last 20 emails to send you a summary every morning',
       ttl_seconds: 900,
     }),
   })
@@ -50,57 +50,57 @@ page.on('console', (m) => {
 const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(e.message))
 
-// Ce qui part reellement sur le reseau depuis le navigateur.
+// What actually goes over the wire from the browser.
 let submittedBody = null
 page.on('request', (r) => {
   if (r.method() === 'POST' && r.url().includes('/s/')) submittedBody = r.postData()
 })
 
-console.log('\n\x1b[1mRendu de la page\x1b[0m')
+console.log('\n\x1b[1mPage rendering\x1b[0m')
 await page.goto(created.url, { waitUntil: 'networkidle' })
-await page.screenshot({ path: `${OUT}/1-formulaire.png`, fullPage: true })
+await page.screenshot({ path: `${OUT}/1-form.png`, fullPage: true })
 
-check('titre visible', (await page.textContent('h1')).includes('Cle API Gmail'))
-check('motif affiche', (await page.content()).includes('resume chaque matin'))
+check('title is visible', (await page.textContent('h1')).includes('Gmail API key'))
+check('purpose is shown', (await page.content()).includes('summary every morning'))
 const countdown = await page.textContent('#countdown')
-check('compte a rebours actif', /min|s/.test(countdown), countdown)
-check('aucune erreur JS au chargement', pageErrors.length === 0, pageErrors.join(' | '))
-check('aucune violation CSP', cspViolations.length === 0, cspViolations.join(' | '))
+check('countdown is running', /min|s/.test(countdown), countdown)
+check('no JS error on load', pageErrors.length === 0, pageErrors.join(' | '))
+check('no CSP violation', cspViolations.length === 0, cspViolations.join(' | '))
 
-// La cle du fragment ne doit jamais quitter le navigateur.
+// The fragment key must never leave the browser.
 const keyLeaked = await page.evaluate(() => {
   const key = location.hash.slice(1)
   return key.length > 0 && document.documentElement.outerHTML.includes(key)
 })
-check('la cle ne figure pas dans le DOM rendu', !keyLeaked)
+check('the key is absent from the rendered DOM', !keyLeaked)
 
-console.log('\n\x1b[1mSaisie et chiffrement navigateur\x1b[0m')
+console.log('\n\x1b[1mInput and in-browser encryption\x1b[0m')
 await page.fill('#secret', SECRET)
 await page.click('#toggle')
-await page.screenshot({ path: `${OUT}/2-saisie-masquee.png`, fullPage: true })
+await page.screenshot({ path: `${OUT}/2-masked-input.png`, fullPage: true })
 
 await page.click('#submit')
 await page.waitForURL(/\/done$/, { timeout: 10_000 })
 await page.screenshot({ path: `${OUT}/3-confirmation.png`, fullPage: true })
 
-check('redirection vers la confirmation', page.url().endsWith('/done'))
-check('le corps envoye ne contient pas le secret en clair', !String(submittedBody).includes(SECRET))
-check('le corps envoye contient bien du chiffre', /"ciphertext"/.test(String(submittedBody)))
+check('redirects to the confirmation page', page.url().endsWith('/done'))
+check('the request body carries no plaintext secret', !String(submittedBody).includes(SECRET))
+check('the request body does carry ciphertext', /"ciphertext"/.test(String(submittedBody)))
 
-console.log('\n\x1b[1mRecuperation par l’agent\x1b[0m')
+console.log('\n\x1b[1mAgent retrieval\x1b[0m')
 const revealed = await (
   await api(`/v1/requests/${created.id}/reveal`, {
     method: 'POST',
     body: JSON.stringify({ poll_token: created.poll_token, encryption_key: created.encryption_key }),
   })
 ).json()
-check('le serveur dechiffre ce que le navigateur a chiffre', revealed.secret === SECRET, revealed.error ?? '')
+check('the server decrypts what the browser encrypted', revealed.secret === SECRET, revealed.error ?? '')
 
-console.log('\n\x1b[1mEtats de fin\x1b[0m')
+console.log('\n\x1b[1mTerminal states\x1b[0m')
 await page.goto(created.url)
-await page.screenshot({ path: `${OUT}/4-lien-consomme.png`, fullPage: true })
-check('le lien reutilise affiche un ecran de fin', (await page.textContent('h1')).length > 0)
+await page.screenshot({ path: `${OUT}/4-consumed-link.png`, fullPage: true })
+check('a reused link shows a terminal screen', (await page.textContent('h1')).length > 0)
 
 await browser.close()
-console.log(failed === 0 ? '\n\x1b[32mTout est bon.\x1b[0m\n' : `\n\x1b[31m${failed} echec(s).\x1b[0m\n`)
+console.log(failed === 0 ? '\n\x1b[32mAll good.\x1b[0m\n' : `\n\x1b[31m${failed} failure(s).\x1b[0m\n`)
 process.exit(failed === 0 ? 0 : 1)
