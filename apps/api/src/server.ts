@@ -7,6 +7,7 @@ import { startSweeper } from './db.js'
 import { openapi } from './openapi.js'
 import { resolveLocale } from './ui/i18n.js'
 import { IndexPage } from './ui/pages.js'
+import { ensureStylesheet } from './ui/styles.js'
 import { pub } from './public.js'
 
 const app = new Hono()
@@ -46,6 +47,7 @@ app.onError((err, c) => {
   return c.json({ error: 'internal_error', message: 'Internal error.' }, 500)
 })
 
+ensureStylesheet()
 startSweeper()
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {

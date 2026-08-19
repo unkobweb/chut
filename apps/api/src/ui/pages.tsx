@@ -104,6 +104,7 @@ export function FormPage(props: {
     expiresAt: props.expiresAt,
     maxBytes: props.maxBytes,
     t: {
+      pasteFailed: t.pasteFailed,
       show: t.show,
       hide: t.hide,
       submit: t.submit,
@@ -165,14 +166,29 @@ export function FormPage(props: {
             <label for="secret" class="font-mono text-[15px] font-bold text-ink">
               {t.inputLabel}
             </label>
-            <button
-              type="button"
-              id="toggle"
-              aria-pressed="false"
-              class="cursor-pointer font-mono text-sm text-phosphor underline-offset-4 hover:underline"
-            >
-              [ {t.show} ]
-            </button>
+            <div class="flex shrink-0 items-baseline gap-3">
+              {/*
+                * Hidden until the script confirms the browser will hand over the
+                * clipboard. Offering a button that cannot work is worse than not
+                * offering one, on a page where people are already unsure.
+                */}
+              <button
+                type="button"
+                id="paste"
+                hidden
+                class="cursor-pointer font-mono text-sm text-phosphor underline-offset-4 hover:underline"
+              >
+                [ {t.paste} ]
+              </button>
+              <button
+                type="button"
+                id="toggle"
+                aria-pressed="false"
+                class="cursor-pointer font-mono text-sm text-phosphor underline-offset-4 hover:underline"
+              >
+                [ {t.show} ]
+              </button>
+            </div>
           </div>
 
           <textarea
@@ -409,6 +425,21 @@ const CLIENT_SCRIPT = `
     setTimeout(tick, 1000);
   }
   tick();
+
+  // Clipboard reads need an explicit gesture and a permissive browser; where the
+  // API is missing the control never appears rather than failing on click.
+  var pasteBtn = document.getElementById('paste');
+  if (pasteBtn && navigator.clipboard && navigator.clipboard.readText) {
+    pasteBtn.hidden = false;
+    pasteBtn.addEventListener('click', function () {
+      navigator.clipboard.readText().then(function (text) {
+        if (!text) return;
+        input.value = text;
+        clearError();
+        input.focus();
+      }).catch(function () { fail(CFG.t.pasteFailed); });
+    });
+  }
 
   var masked = true;
   function applyMask() {

@@ -14,6 +14,8 @@ export interface Messages {
   wants: string
   unverified: string
   inputLabel: string
+  paste: string
+  pasteFailed: string
   show: string
   hide: string
   submit: string
@@ -66,6 +68,8 @@ const en: Messages = {
   wants: 'wants',
   unverified: 'Written by the assistant. This page cannot verify it.',
   inputLabel: 'paste the secret',
+  paste: 'paste',
+  pasteFailed: 'Your browser would not let this page read the clipboard — paste it yourself.',
   show: 'show',
   hide: 'hide',
   submit: 'encrypt & send',
