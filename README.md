@@ -21,6 +21,7 @@ it in plaintext, and a copy of the database alone is not enough to read it.
 | [`apps/api`](apps/api) | The service: HTTP API, the page the human fills in, OpenAPI spec |
 | `apps/web` | Landing page and docs — not built yet |
 | `packages/mcp` | MCP server, so agents can call chut as a tool — not built yet |
+| [`Dockerfile`](Dockerfile) | At the root on purpose: `apps/api` is a workspace, so the build context has to be the root |
 
 One product, several surfaces. They share an auth model, a threat model and a
 release cycle, so they share a repository: a security fix ships once instead of
@@ -50,6 +51,11 @@ Try it the way a human would, without writing any HTTP by hand:
 npm run link                 # create a link, then wait and show what arrives
 npm run link -- --all        # one link per page state, to check them visually
 ```
+
+## Deploying
+
+One container, one volume, no database server. [DEPLOY.md](DEPLOY.md) has the
+environment, the volume, and the Dokploy settings.
 
 ## Security
 
