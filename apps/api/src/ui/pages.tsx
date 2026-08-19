@@ -11,6 +11,9 @@ function safeJson(value: unknown): string {
 // Lowercase, as drawn. Uppercase tracked labels read as officialdom, and
 // officialdom is the register a phishing page reaches for.
 const LABEL = 'font-mono text-[13px] text-faint'
+
+/** Width of the expiry bar, in characters. Sixteen, as the mockups drew it. */
+const BAR_CELLS = 16
 const PANEL = 'rounded-lg border border-line bg-panel'
 
 function Card({ children }: { children: Child }) {
@@ -43,15 +46,29 @@ function Header({ locale, right }: { locale: Locale; right?: Child }) {
  */
 function Countdown({ locale }: { locale: Locale }) {
   return (
-    <div id="countdown-block" class="mt-5 flex items-center gap-3">
+    <div id="countdown-block" class="mt-5 flex items-baseline gap-2">
       <span class="font-mono text-[13px] whitespace-nowrap text-faint">
         {locale.t.expires}{' '}
         <span id="countdown" aria-live="polite" class="tabular-nums text-dim">
           —
         </span>
       </span>
-      <span class="h-2.5 flex-1 overflow-hidden rounded-xs bg-line" aria-hidden="true">
-        <span id="countdown-bar" class="block h-full w-full bg-phosphor/70" />
+      {/*
+        * A run of block characters, as drawn — not a CSS bar.
+        *
+        * The multi-line ASCII logo had to go because every line had to align with
+        * the ones above it, and any font substitution destroyed the shape. A
+        * single row of identical characters has no alignment to lose, and U+2593
+        * and U+2591 come from DOS consoles: about as universally present as a
+        * glyph gets. Decorative, so hidden from screen readers — the countdown
+        * beside it already announces the time.
+        */}
+      <span
+        id="countdown-bar"
+        aria-hidden="true"
+        class="font-mono text-[13px] leading-none tracking-tighter whitespace-nowrap text-phosphor"
+      >
+        {'\u2593'.repeat(BAR_CELLS)}
       </span>
     </div>
   )
@@ -363,6 +380,8 @@ const CLIENT_SCRIPT = `
   try { fetch('/s/' + CFG.id + '/opened', { method: 'POST', keepalive: true }).catch(function(){}); } catch (e) {}
 
   var bar = document.getElementById('countdown-bar');
+  var CELLS = 16;
+  var FULL = '\u2593', EMPTY = '\u2591';
   var total = Math.max(1, CFG.expiresAt - Date.now());
   var dead = false;
   function tick() {
@@ -370,14 +389,17 @@ const CLIENT_SCRIPT = `
     var left = Math.max(0, Math.round(remaining / 1000));
     if (left <= 0) {
       countdown.textContent = CFG.t.expired;
-      if (bar) bar.style.width = '0%';
+      if (bar) bar.textContent = EMPTY.repeat(CELLS);
       // A real server-side transition: the reload renders the expired state.
       if (!dead) { dead = true; location.replace('/s/' + CFG.id); }
       return;
     }
     var m = Math.floor(left / 60), s = left % 60;
     countdown.textContent = m + ':' + String(s).padStart(2, '0');
-    if (bar) bar.style.width = Math.max(0, Math.min(100, (remaining / total) * 100)) + '%';
+    if (bar) {
+      var lit = Math.max(0, Math.min(CELLS, Math.ceil((remaining / total) * CELLS)));
+      bar.textContent = FULL.repeat(lit) + EMPTY.repeat(CELLS - lit);
+    }
     setTimeout(tick, 1000);
   }
   tick();
