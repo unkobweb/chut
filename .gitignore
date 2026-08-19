@@ -7,3 +7,6 @@ screenshots/
 _to_delete/
 .source-archive.tar.gz
 apps/api/src/ui/styles.generated.css
+
+# Written by scripts/volume.mjs; local to whoever ran the check.
+.volume-check.json

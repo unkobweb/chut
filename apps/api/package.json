@@ -16,6 +16,7 @@
     "test:attacks": "node test/attacks.mjs",
     "test:browser": "node test/browser.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "volume": "node scripts/volume.mjs",
     "build:css": "npx @tailwindcss/cli -i src/ui/theme.css -o src/ui/styles.generated.css --minify",
     "link": "node scripts/link.mjs"
   },

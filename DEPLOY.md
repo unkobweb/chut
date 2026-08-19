@@ -81,6 +81,22 @@ The check worth knowing about is the first one: the returned `url` must start
 with your real domain. A wrong `BASE_URL` breaks nothing visible on the server
 and every link it hands out.
 
+### The volume
+
+Worth proving once per host, because it is the only production failure here
+that is completely silent — an unmounted volume passes every other check, and
+only shows up as requests vanishing at a moment nobody connects to a deploy
+that happened an hour earlier.
+
+```bash
+npm run volume -- https://your-domain   # leaves a marker
+# redeploy
+npm run volume -- https://your-domain   # says whether it survived
+```
+
+The marker is an ordinary pending request with a 24 h TTL, left unfilled. It
+holds no secret and expires on its own.
+
 ## Backups
 
 The volume holds one SQLite file. It contains ciphertext and metadata, never a
