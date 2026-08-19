@@ -145,14 +145,47 @@ api.post('/requests', async (c) => {
 /**
  * The poll_token proves the caller is the agent that created the request.
  * The API key alone is not enough: it may cover several agents.
+ *
+ * Accepted from the X-Poll-Token header or, for reveal, the JSON body — never
+ * from the query string. A URL is the one part of a request that gets written
+ * down everywhere it passes: the access logs of every proxy, CDN and load
+ * balancer on the way, plus browser history and referrer headers. This service
+ * keeps its own logs free of secrets; accepting a credential in the URL would
+ * hand it to logs it does not control.
+ *
+ * Returns the response to send, or null when the caller is authorised.
  */
-function authorizeRow(c: Context, row: RequestRow, bodyToken?: string) {
-  if (!safeEqualHex(row.api_key_hash, c.get('apiKeyHash'))) return 'not_found' as const
+function authorize(c: Context, row: RequestRow, bodyToken?: string): Response | null {
+  // Mismatched ownership answers 404 rather than 403, so the endpoint cannot be
+  // used to discover which ids exist under someone else's key.
+  if (!safeEqualHex(row.api_key_hash, c.get('apiKeyHash'))) {
+    return c.json({ error: 'not_found' }, 404)
+  }
 
-  const provided = c.req.header('x-poll-token') ?? bodyToken ?? c.req.query('poll_token') ?? ''
-  if (!provided || !safeEqualHex(row.poll_token_hash, sha256(provided))) return 'forbidden' as const
+  // Checked after ownership: a distinct status on a row the caller does not own
+  // would be an existence oracle.
+  if (c.req.query('poll_token') !== undefined) {
+    return c.json(
+      {
+        error: 'token_in_url',
+        message:
+          'poll_token must not be sent in the query string: URLs are recorded by proxies, ' +
+          'CDNs and browser history. Send it in the X-Poll-Token header instead. Treat the ' +
+          'token you just put in a URL as compromised and create a new request.',
+      },
+      400,
+    )
+  }
 
-  return 'ok' as const
+  const provided = c.req.header('x-poll-token') ?? bodyToken ?? ''
+  if (!provided || !safeEqualHex(row.poll_token_hash, sha256(provided))) {
+    return c.json(
+      { error: 'forbidden', message: 'Missing or invalid poll_token (X-Poll-Token header).' },
+      403,
+    )
+  }
+
+  return null
 }
 
 /**
@@ -163,13 +196,8 @@ api.get('/requests/:id', (c) => {
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
 
-  const verdict = authorizeRow(c, row)
-  if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
-  if (verdict === 'forbidden')
-    return c.json(
-      { error: 'forbidden', message: 'Missing or invalid poll_token (X-Poll-Token header).' },
-      403,
-    )
+  const denied = authorize(c, row)
+  if (denied) return denied
 
   return c.json(serialize(row))
 })
@@ -189,14 +217,8 @@ api.post('/requests/:id/reveal', async (c) => {
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
 
-  const verdict = authorizeRow(
-    c,
-    row,
-    typeof body.poll_token === 'string' ? body.poll_token : undefined,
-  )
-  if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
-  if (verdict === 'forbidden')
-    return c.json({ error: 'forbidden', message: 'Missing or invalid poll_token.' }, 403)
+  const denied = authorize(c, row, typeof body.poll_token === 'string' ? body.poll_token : undefined)
+  if (denied) return denied
 
   const now = Date.now()
   const status = effectiveStatus(row, now)
@@ -269,10 +291,8 @@ api.delete('/requests/:id', (c) => {
   const row = queries.byId.get(c.req.param('id'))
   if (!row) return c.json({ error: 'not_found' }, 404)
 
-  const verdict = authorizeRow(c, row)
-  if (verdict === 'not_found') return c.json({ error: 'not_found' }, 404)
-  if (verdict === 'forbidden')
-    return c.json({ error: 'forbidden', message: 'Missing or invalid poll_token.' }, 403)
+  const denied = authorize(c, row)
+  if (denied) return denied
 
   queries.cancel.run({ id: row.id })
   return c.json(serialize(queries.byId.get(row.id)!))

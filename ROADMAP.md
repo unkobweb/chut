@@ -16,12 +16,12 @@ An adversarial review found 11 issues. Each gets a failing test first, then the 
 
 Closed: reveal race, unbounded `iv` and request body, unauthenticated `/done`
 leaking the label, rate limiting that covered neither failed auth nor the public
-routes, `burn_on_reveal` failing open on non-boolean input, and blindly trusted
-forwarding headers.
+routes, `burn_on_reveal` failing open on non-boolean input, blindly trusted
+forwarding headers, and `poll_token` accepted from the query string.
 
-Open: `poll_token` accepted in the query string, link-preview bots inflating
-`opened_count`, CSRF on the fill endpoint, a `null` body causing a 500, and
-unfiltered Unicode control characters in agent-supplied text.
+Open: link-preview bots inflating `opened_count`, CSRF on the fill endpoint, a
+`null` body causing a 500, and unfiltered Unicode control characters in
+agent-supplied text.
 
 ## Later
 

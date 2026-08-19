@@ -8,7 +8,7 @@ import { statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import {
   startServer, startServerOn, api, createRequest, fillRequest, concurrentPost,
-  BASE, KEY, DB, SALT, check, section, report,
+  browserEncrypt, BASE, KEY, DB, SALT, check, section, report,
 } from './harness.mjs'
 
 /** Mirrors hashIp() server-side: sha256(salt:ip), truncated. */
@@ -532,6 +532,91 @@ section('06 · X-Forwarded-For must not be believed by default')
     )
   } finally {
     limited.proc.kill()
+  }
+}
+
+// =============================================================================
+section('07 · poll_token must never travel in a URL')
+// =============================================================================
+// authorizeRow accepted the token from c.req.query('poll_token'). A URL is the
+// one part of a request that gets written down everywhere: the access logs of
+// every proxy, CDN and load balancer on the path, browser history, referrer
+// headers. This service goes to some length to keep secrets out of its own logs
+// and then offered a door where the credential rides in the URL - into logs it
+// does not control.
+{
+  const srv = await startServerOn(8808, { RATE_LIMIT_PER_MIN: '1000' })
+  try {
+    const create = async () =>
+      (
+        await fetch(`${srv.base}/v1/requests`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+          body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+        })
+      ).json()
+
+    const req = await create()
+
+    // 7.1 — the query string must not authenticate anything
+    const viaQuery = await fetch(
+      `${srv.base}/v1/requests/${req.id}?poll_token=${encodeURIComponent(req.poll_token)}`,
+      { headers: { authorization: `Bearer ${KEY}` } },
+    )
+    check(
+      'a poll_token in the query string does not authorise the call',
+      viaQuery.status !== 200,
+      `got 200 — the credential travelled in the URL and was accepted`,
+    )
+
+    const body = await viaQuery.json()
+    check(
+      'and the error says where the token belongs',
+      typeof body.message === 'string' && /header/i.test(body.message),
+      JSON.stringify(body),
+    )
+
+    // 7.2 — the supported channels still work
+    const viaHeader = await fetch(`${srv.base}/v1/requests/${req.id}`, {
+      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
+    })
+    check('the X-Poll-Token header still works', viaHeader.status === 200, `got ${viaHeader.status}`)
+
+    const filled = await create()
+    await fetch(`${srv.base}/s/${filled.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(await browserEncrypt(filled.encryption_key, 'sk-body-channel')),
+    })
+    const viaBody = await fetch(`${srv.base}/v1/requests/${filled.id}/reveal`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+      body: JSON.stringify({
+        poll_token: filled.poll_token,
+        encryption_key: filled.encryption_key,
+      }),
+    })
+    check(
+      'the JSON body channel still works for reveal',
+      viaBody.status === 200 && (await viaBody.json()).secret === 'sk-body-channel',
+    )
+
+    // 7.3 — a wrong token in the right place is still a plain 403
+    const wrong = await fetch(`${srv.base}/v1/requests/${req.id}`, {
+      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': 'not-the-token' },
+    })
+    check('a wrong token in the header is still refused', wrong.status === 403, `got ${wrong.status}`)
+
+    // 7.4 — and our own access log must never contain a token, even when a
+    // careless client insists on putting one in the URL
+    const log = srv.readLog()
+    check(
+      'the service access log contains no poll_token',
+      !log.includes(req.poll_token) && !log.includes('poll_token='),
+      'a token was found in the server log',
+    )
+  } finally {
+    srv.proc.kill()
   }
 }
 

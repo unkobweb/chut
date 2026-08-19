@@ -3,7 +3,7 @@
  * with a fresh database, so every run starts from the exact same state.
  */
 import { spawn, execSync } from 'node:child_process'
-import { rmSync, mkdirSync } from 'node:fs'
+import { rmSync, mkdirSync, openSync, readFileSync, existsSync } from 'node:fs'
 import http from 'node:http'
 
 export const PORT = 8801
@@ -29,6 +29,10 @@ export async function startServerOn(port, extraEnv = {}) {
   }
 
   const base = `http://localhost:${port}`
+  const logPath = `./data/server-${port}.log`
+  try { rmSync(logPath) } catch {}
+  const logFd = openSync(logPath, 'a')
+
   const proc = spawn('npx', ['tsx', 'src/server.ts'], {
     env: {
       ...process.env,
@@ -39,13 +43,15 @@ export async function startServerOn(port, extraEnv = {}) {
       IP_HASH_SALT: SALT,
       ...extraEnv,
     },
-    stdio: 'ignore',
+    stdio: ['ignore', logFd, logFd],
   })
+
+  const readLog = () => (existsSync(logPath) ? readFileSync(logPath, 'utf8') : '')
 
   for (let i = 0; i < 100; i++) {
     if (proc.exitCode !== null) throw new Error(`server exited (code ${proc.exitCode})`)
     try {
-      if ((await fetch(`${base}/healthz`)).ok) return { proc, base }
+      if ((await fetch(`${base}/healthz`)).ok) return { proc, base, readLog }
     } catch {}
     await new Promise((r) => setTimeout(r, 200))
   }

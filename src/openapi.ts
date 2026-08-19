@@ -150,7 +150,9 @@ export const openapi = {
             in: 'header',
             required: true,
             schema: { type: 'string' },
-            description: 'The poll_token received on creation.',
+            description:
+              'The poll_token received on creation. It must travel in this header, ' +
+              'never in the query string: URLs end up in proxy and CDN access logs.',
           },
         ],
         responses: {
