@@ -6,6 +6,7 @@
  */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
+import { createServer } from 'node:http'
 
 const BASE = process.env.BASE ?? 'http://localhost:8787'
 const KEY = process.env.API_KEY ?? 'dev_change_me'
@@ -125,6 +126,75 @@ console.log('\n\x1b[1mTerminal states\x1b[0m')
 await page.goto(created.url)
 await page.screenshot({ path: `${OUT}/4-consumed-link.png`, fullPage: true })
 check('a reused link shows a terminal screen', (await page.textContent('h1')).length > 0)
+
+// --- cross-site arrival ------------------------------------------------------
+// A human reaches this link by clicking it in Telegram web, Slack or an email
+// client, so the navigation is legitimately Sec-Fetch-Site: cross-site. Blocking
+// cross-site *writes* must not block cross-site *arrivals* — that would reject
+// the exact journey the service exists for.
+console.log('\n\x1b[1mCross-site arrival\x1b[0m')
+{
+  const fresh = await (
+    await api('/v1/requests', {
+      method: 'POST',
+      body: JSON.stringify({ requester: 'Telegram Assistant', label: 'Stripe key' }),
+    })
+  ).json()
+
+  // A different origin: distinct host, so a genuine cross-site navigation.
+  const referrer = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' })
+    res.end(`<!doctype html><a id="go" href="${fresh.url}">open</a>`)
+  })
+  await new Promise((r) => referrer.listen(8899, '127.0.0.1', r))
+
+  try {
+    const visitor = await browser.newPage()
+    const sentHeaders = []
+    visitor.on('request', (r) => {
+      if (r.url().startsWith(BASE) && r.method() === 'POST') sentHeaders.push(r.headers())
+    })
+
+    await visitor.goto('http://127.0.0.1:8899/')
+    await visitor.click('#go')
+    await visitor.waitForLoadState('networkidle')
+
+    check(
+      'a cross-site click still reaches the form',
+      (await visitor.textContent('h1')).includes('Stripe key'),
+      visitor.url(),
+    )
+
+    await visitor.fill('#secret', 'sk-arrived-from-elsewhere')
+    await visitor.click('#submit')
+    await visitor.waitForURL(/\/done$/, { timeout: 10_000 })
+    check('and can still submit from there', visitor.url().endsWith('/done'))
+
+    const posted = await (
+      await api(`/v1/requests/${fresh.id}/reveal`, {
+        method: 'POST',
+        body: JSON.stringify({
+          poll_token: fresh.poll_token,
+          encryption_key: fresh.encryption_key,
+        }),
+      })
+    ).json()
+    check(
+      'the secret arrives intact after a cross-site journey',
+      posted.secret === 'sk-arrived-from-elsewhere',
+      posted.error ?? '',
+    )
+
+    const state = await (
+      await api(`/v1/requests/${fresh.id}`, { headers: { 'x-poll-token': fresh.poll_token } })
+    ).json()
+    check('and the open beacon still fired', state.opened_count === 1, `opened_count ${state.opened_count}`)
+
+    await visitor.close()
+  } finally {
+    await new Promise((r) => referrer.close(r))
+  }
+}
 
 await browser.close()
 console.log(failed === 0 ? '\n\x1b[32mAll good.\x1b[0m\n' : `\n\x1b[31m${failed} failure(s).\x1b[0m\n`)

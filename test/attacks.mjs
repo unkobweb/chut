@@ -724,4 +724,120 @@ section('08 · Link previews must not consume the tamper signal')
   }
 }
 
+// =============================================================================
+section('09 · Cross-site requests must not be able to fill a slot')
+// =============================================================================
+// POST /s/:id accepted Content-Type: text/plain — a "simple" request in CORS
+// terms, so no preflight — and checked neither Origin nor Sec-Fetch-Site. Any
+// page the human visits while a link is pending could therefore fill the slot
+// from their browser.
+//
+// The severity is not disclosure: the attacker cannot read the response, and one
+// who already knows the id could POST with curl anyway. It is that CSRF launders
+// the write through the victim's own browser. The fill is then recorded with the
+// victim's IP fingerprint and charged to their rate-limit bucket, so a hostile
+// fill becomes indistinguishable from a legitimate one in exactly the fields the
+// agent inspects to detect tampering. It also burns the link before the human
+// gets to it, which is targeted sabotage.
+{
+  const srv = await startServerOn(8811, { RATE_LIMIT_PER_MIN: '1000' })
+  const create = async () =>
+    (
+      await fetch(`${srv.base}/v1/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
+      })
+    ).json()
+  const statusOf = async (r) =>
+    (
+      await (
+        await fetch(`${srv.base}/v1/requests/${r.id}`, {
+          headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': r.poll_token },
+        })
+      ).json()
+    ).status
+
+  try {
+    const payload = async (r) => JSON.stringify(await browserEncrypt(r.encryption_key, 'sk-hostile'))
+
+    // 9.1 — text/plain dodges the CORS preflight; it must not be accepted
+    const plain = await create()
+    const viaPlainText = await fetch(`${srv.base}/s/${plain.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: await payload(plain),
+    })
+    check(
+      'a text/plain body is refused',
+      viaPlainText.status === 415 || viaPlainText.status === 400,
+      `got ${viaPlainText.status} — the endpoint is reachable without a preflight`,
+    )
+    check(
+      'and the link is left untouched for its human',
+      (await statusOf(plain)) === 'pending',
+      'the slot was burned by a cross-site request',
+    )
+
+    // 9.2 — a hostile Origin must be refused outright
+    const crossOrigin = await create()
+    const viaEvilOrigin = await fetch(`${srv.base}/s/${crossOrigin.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+      body: await payload(crossOrigin),
+    })
+    check('a cross-site Origin is refused', viaEvilOrigin.status === 403, `got ${viaEvilOrigin.status}`)
+    check(
+      'and that link is untouched too',
+      (await statusOf(crossOrigin)) === 'pending',
+    )
+
+    // 9.3 — modern browsers announce the context themselves
+    const fetchSite = await create()
+    const viaFetchMetadata = await fetch(`${srv.base}/s/${fetchSite.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+      body: await payload(fetchSite),
+    })
+    check(
+      'Sec-Fetch-Site: cross-site is refused',
+      viaFetchMetadata.status === 403,
+      `got ${viaFetchMetadata.status}`,
+    )
+
+    // 9.4 — the beacon is a write too: it must not be floodable cross-site
+    const beacon = await create()
+    const viaEvilBeacon = await fetch(`${srv.base}/s/${beacon.id}/opened`, {
+      method: 'POST',
+      headers: { origin: 'https://evil.example' },
+    })
+    check('the open beacon refuses a cross-site origin', viaEvilBeacon.status === 403)
+
+    // 9.5 — everything legitimate still works: the page itself, and API clients
+    const sameOrigin = await create()
+    const viaSameOrigin = await fetch(`${srv.base}/s/${sameOrigin.id}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: srv.base,
+        'sec-fetch-site': 'same-origin',
+      },
+      body: await payload(sameOrigin),
+    })
+    check('the page fills its own slot normally', viaSameOrigin.status === 200, `got ${viaSameOrigin.status}`)
+
+    // curl, an agent, a script: no Origin at all. Browsers always send Origin on a
+    // cross-origin POST, so its absence cannot be a cross-site browser request.
+    const headless = await create()
+    const viaNoOrigin = await fetch(`${srv.base}/s/${headless.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: await payload(headless),
+    })
+    check('a client with no Origin still works', viaNoOrigin.status === 200, `got ${viaNoOrigin.status}`)
+  } finally {
+    srv.proc.kill()
+  }
+}
+
 report(proc)

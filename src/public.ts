@@ -7,6 +7,7 @@ import { hashIp } from './crypto.js'
 import { effectiveStatus, queries } from './db.js'
 import { renderClosed, renderForm, renderSuccess } from './page.js'
 import { limitPublic } from './rate-limit.js'
+import { rejectCrossSite, requireJsonBody } from './same-origin.js'
 
 export const pub = new Hono()
 
@@ -118,6 +119,9 @@ pub.get('/s/:id', (c) => {
 /** Receives the payload already encrypted by the browser. */
 pub.post(
   '/s/:id',
+  // Ordered cheapest-first, and each rejects before the body is touched.
+  rejectCrossSite,
+  requireJsonBody,
   bodyLimit({
     maxSize: MAX_BODY_BYTES,
     onError: (c) =>
@@ -199,7 +203,7 @@ pub.post(
  * Always answers 204, for any id, existing or not: a different status for a real
  * id would turn this into an existence oracle.
  */
-pub.post('/s/:id/opened', (c) => {
+pub.post('/s/:id/opened', rejectCrossSite, (c) => {
   queries.markOpened.run({ id: c.req.param('id'), now: Date.now() })
   c.header('Cache-Control', 'no-store')
   return c.body(null, 204)
