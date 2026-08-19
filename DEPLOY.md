@@ -65,14 +65,17 @@ Set `TRUST_PROXY_HOPS=1`: Dokploy puts Traefik in front of every application.
 ## Verifying a deployment
 
 ```bash
-curl https://your-domain/healthz          # {"ok":true,...}
-curl -X POST https://your-domain/v1/requests \
-  -H 'content-type: application/json' \
-  -d '{"requester":"smoke test","label":"nothing","ttl_seconds":60}'
+npm run smoke -- https://your-domain
 ```
 
-The `url` in the response must start with your real domain — that is the one
-thing a wrong `BASE_URL` breaks silently.
+It walks the whole round trip with a throwaway value — create, render, encrypt,
+fill, poll, reveal, burn — and checks the security headers on the way. Run it
+after every deploy. It leaves one dead row behind and never touches the rate
+limiter, so it is safe to point at a live service.
+
+The check worth knowing about is the first one: the returned `url` must start
+with your real domain. A wrong `BASE_URL` breaks nothing visible on the server
+and every link it hands out.
 
 ## Backups
 
