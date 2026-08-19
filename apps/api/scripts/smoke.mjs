@@ -36,6 +36,37 @@ async function browserEncrypt(keyB64url, plaintext) {
   return { ciphertext: Buffer.from(ct).toString('base64'), iv: Buffer.from(iv).toString('base64') }
 }
 
+/**
+ * Node wraps every transport failure in a bare "fetch failed" and hides the
+ * useful part — the DNS code, the TLS error, the refused connection — one level
+ * down in err.cause. A smoke test that cannot say why it could not connect is
+ * worth nothing, so unwrap it here rather than at each call site.
+ */
+async function http(url, opts = {}) {
+  try {
+    return await fetch(url, opts)
+  } catch (e) {
+    const c = e.cause ?? {}
+    const code = c.code ?? c.errno ?? ''
+    const detail = [code, c.message ?? c.reason ?? e.message].filter(Boolean).join(' · ')
+    const err = new Error(`${opts.method ?? 'GET'} ${url}\n         ${detail}`)
+    err.code = code
+    throw err
+  }
+}
+
+/** What the transport-level codes actually mean here. */
+const DIAGNOSIS = {
+  ENOTFOUND: 'the hostname does not resolve from this machine. Almost always a\n         stale negative DNS cache: on macOS,\n           sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder',
+  EAI_AGAIN: 'DNS lookup timed out — the resolver, not the service.',
+  ECONNREFUSED: 'the host answered but nothing is listening on that port.',
+  ETIMEDOUT: 'no answer at all. A firewall between here and there, or the host is down.',
+  CERT_HAS_EXPIRED: 'the TLS certificate has expired.',
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'the certificate chain does not validate — a\n         self-signed certificate, which usually means the reverse proxy never\n         obtained a real one for this domain.',
+  DEPTH_ZERO_SELF_SIGNED_CERT: 'a self-signed certificate: the reverse proxy is\n         serving its default, so Let\u2019s Encrypt never issued one for this domain.',
+  ERR_TLS_CERT_ALTNAME_INVALID: 'the certificate is valid but for a different\n         hostname than the one requested.',
+}
+
 const SECRET = `smoke-test-not-a-real-credential-${Date.now()}`
 const BROWSER = { 'user-agent': 'Mozilla/5.0 (smoke test)' }
 
@@ -43,9 +74,12 @@ console.log(`\nchut smoke test → ${BASE}`)
 
 // --- the service is up -------------------------------------------------------
 step('1 · reachable')
-const health = await fetch(`${BASE}/healthz`).catch((e) => e)
+const health = await http(`${BASE}/healthz`).catch((e) => e)
 if (health instanceof Error) {
-  console.log(`  \x1b[31mFAIL\x1b[0m cannot reach ${BASE} — ${health.message}\n`)
+  console.log(`  \x1b[31mFAIL\x1b[0m ${health.message}`)
+  const why = DIAGNOSIS[health.code]
+  if (why) console.log(`       \u2192 ${why}`)
+  console.log('')
   process.exit(1)
 }
 const healthBody = await health.json()
@@ -53,7 +87,7 @@ check('/healthz answers', health.status === 200 && healthBody.ok === true, JSON.
 
 // --- create ------------------------------------------------------------------
 step('2 · an agent creates a request')
-const createRes = await fetch(`${BASE}/v1/requests`, {
+const createRes = await http(`${BASE}/v1/requests`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
@@ -87,7 +121,7 @@ check('poll_token and encryption_key came back', !!created.poll_token && !!creat
 
 // --- the page ----------------------------------------------------------------
 step('3 · the page a human lands on')
-const page = await fetch(`${BASE}/s/${created.id}`, { headers: BROWSER })
+const page = await http(`${BASE}/s/${created.id}`, { headers: BROWSER })
 const html = await page.text()
 check('200', page.status === 200, String(page.status))
 check('the requester is rendered', html.includes('deployment smoke test'))
@@ -105,7 +139,7 @@ if (BASE.startsWith('https://')) {
 
 // --- fill --------------------------------------------------------------------
 step('4 · the human fills it in')
-const fill = await fetch(`${BASE}/s/${created.id}`, {
+const fill = await http(`${BASE}/s/${created.id}`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', origin: pageOrigin, ...BROWSER },
   body: JSON.stringify(await browserEncrypt(created.encryption_key, SECRET)),
@@ -115,7 +149,7 @@ check('the ciphertext is accepted', fill.status === 200, `${fill.status} · ${(a
 // --- poll --------------------------------------------------------------------
 step('5 · the agent polls')
 const state = await (
-  await fetch(`${BASE}/v1/requests/${created.id}`, { headers: { 'x-poll-token': created.poll_token } })
+  await http(`${BASE}/v1/requests/${created.id}`, { headers: { 'x-poll-token': created.poll_token } })
 ).json()
 check('status is filled', state.status === 'filled', JSON.stringify(state).slice(0, 200))
 check(
@@ -128,7 +162,7 @@ check(
 // --- reveal ------------------------------------------------------------------
 step('6 · the agent reveals, once')
 const revealed = await (
-  await fetch(`${BASE}/v1/requests/${created.id}/reveal`, {
+  await http(`${BASE}/v1/requests/${created.id}/reveal`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ poll_token: created.poll_token, encryption_key: created.encryption_key }),
@@ -137,22 +171,22 @@ const revealed = await (
 check('the value survives the round trip', revealed.secret === SECRET, JSON.stringify(revealed).slice(0, 200))
 check('and is reported as burned', revealed.burned === true)
 
-const again = await fetch(`${BASE}/v1/requests/${created.id}/reveal`, {
+const again = await http(`${BASE}/v1/requests/${created.id}/reveal`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ poll_token: created.poll_token, encryption_key: created.encryption_key }),
 })
 check('a second reveal is refused', again.status === 409, String(again.status))
-check('the link is dead', (await fetch(`${BASE}/s/${created.id}`)).status === 410)
+check('the link is dead', (await http(`${BASE}/s/${created.id}`)).status === 410)
 
 // --- access control ----------------------------------------------------------
 step('7 · holding the link is not enough')
-check('no poll_token: 403', (await fetch(`${BASE}/v1/requests/${created.id}`)).status === 403)
+check('no poll_token: 403', (await http(`${BASE}/v1/requests/${created.id}`)).status === 403)
 check(
   'wrong poll_token: 403',
-  (await fetch(`${BASE}/v1/requests/${created.id}`, { headers: { 'x-poll-token': 'nope' } })).status === 403,
+  (await http(`${BASE}/v1/requests/${created.id}`, { headers: { 'x-poll-token': 'nope' } })).status === 403,
 )
-check('an unknown link: 404', (await fetch(`${BASE}/s/definitelynotarealid`)).status === 404)
+check('an unknown link: 404', (await http(`${BASE}/s/definitelynotarealid`)).status === 404)
 
 // -----------------------------------------------------------------------------
 const colour = failed === 0 ? '\x1b[32m' : '\x1b[31m'
