@@ -86,7 +86,27 @@ api.post('/requests', async (c) => {
       return badRequest(c, `"ttl_seconds" must be between 30 and ${config.maxTtl}.`)
   }
 
-  const burnOnReveal = body.burn_on_reveal === undefined ? true : body.burn_on_reveal === true
+  // Fail closed, in both directions.
+  //
+  // Absent or null means "use the default", and the default is protection ON —
+  // a serialiser that emits null for an unset optional field must not end up
+  // disabling single-use.
+  //
+  // Anything else has to be a strict boolean. The previous test was
+  // `body.burn_on_reveal === true`, so "true", 1 or [] all fell through to false:
+  // a caller who spelled the option out believed they were turning protection on
+  // and turned it off. A security control must never be disabled by an input the
+  // caller did not mean as "off" — when the intent is unclear, refuse.
+  let burnOnReveal = true
+  if (body.burn_on_reveal !== undefined && body.burn_on_reveal !== null) {
+    if (typeof body.burn_on_reveal !== 'boolean') {
+      return badRequest(
+        c,
+        '"burn_on_reveal" must be a boolean (true or false), not a string or a number.',
+      )
+    }
+    burnOnReveal = body.burn_on_reveal
+  }
 
   const now = Date.now()
   const id = newRequestId()

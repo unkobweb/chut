@@ -344,4 +344,70 @@ section('04 · Rate limiting must cover failed auth and public routes')
   }
 }
 
+// =============================================================================
+section('05 · burn_on_reveal must never fail open')
+// =============================================================================
+// `body.burn_on_reveal === true` meant anything that was not the strict boolean
+// fell through to false. A client serialising "true" or 1 — routine in bash, n8n
+// or a form post — believed it was switching single-use ON and switched it OFF.
+// The worst kind of bug: it fires precisely on the caller who was being careful.
+{
+  // 5.1 — the secure default holds when the field is absent or null
+  for (const [payload, description] of [
+    [{}, 'omitted'],
+    [{ burn_on_reveal: null }, 'null'],
+  ]) {
+    const req = await createRequest(payload)
+    check(
+      `burn is ON when the field is ${description}`,
+      req.burn_on_reveal === true,
+      `got ${JSON.stringify(req.burn_on_reveal)}`,
+    )
+  }
+
+  // 5.2 — anything that is not a strict boolean is refused outright
+  for (const value of ['true', 'false', 1, 0, [], {}, 'yes']) {
+    const res = await api('/v1/requests', {
+      method: 'POST',
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', burn_on_reveal: value }),
+    })
+    const body = await res.json()
+    check(
+      `burn_on_reveal: ${JSON.stringify(value)} is rejected`,
+      res.status === 400,
+      `got ${res.status}, request created with burn=${JSON.stringify(body.burn_on_reveal)}`,
+    )
+  }
+
+  // 5.3 — the two legitimate booleans still work, and actually drive behaviour.
+  // Checking the echoed flag is not enough: what matters is whether the secret
+  // is really destroyed.
+  const burning = await createRequest({ burn_on_reveal: true })
+  await fillRequest(burning, 'sk-should-burn')
+  const reveal = (r) =>
+    api(`/v1/requests/${r.id}/reveal`, {
+      method: 'POST',
+      body: JSON.stringify({ poll_token: r.poll_token, encryption_key: r.encryption_key }),
+    })
+
+  const firstBurn = await reveal(burning)
+  const secondBurn = await reveal(burning)
+  check('burn_on_reveal: true still reads once', firstBurn.status === 200)
+  check(
+    'and the secret is genuinely destroyed',
+    secondBurn.status === 409,
+    `second read returned ${secondBurn.status}`,
+  )
+
+  const keeping = await createRequest({ burn_on_reveal: false })
+  await fillRequest(keeping, 'sk-should-persist')
+  const firstKeep = await reveal(keeping)
+  const secondKeep = await reveal(keeping)
+  check('burn_on_reveal: false is still honoured', firstKeep.status === 200)
+  check(
+    'and the secret stays readable until expiry',
+    secondKeep.status === 200 && (await secondKeep.json()).secret === 'sk-should-persist',
+  )
+}
+
 report(proc)

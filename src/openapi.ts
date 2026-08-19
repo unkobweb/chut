@@ -103,7 +103,10 @@ export const openapi = {
                   burn_on_reveal: {
                     type: 'boolean',
                     default: true,
-                    description: 'If true, the secret is destroyed on first read.',
+                    description:
+                      'If true, the secret is destroyed on first read. Must be a real ' +
+                      'boolean: the string "true" or the number 1 are rejected rather ' +
+                      'than silently disabling single-use.',
                   },
                 },
               },
