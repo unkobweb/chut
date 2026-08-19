@@ -147,6 +147,14 @@ export function FormPage(props: {
           </p>
         </section>
 
+        {/*
+          * One line, fixed, and the only text on the page the requester cannot
+          * write. Anyone can create a request here — there is no key — so the
+          * words above are whatever the sender chose, including a company name
+          * they have nothing to do with. This says the exit is free.
+          */}
+        <p class="mb-5 text-[13px] leading-snug text-faint">{t.caution}</p>
+
         <form id="form" novalidate>
           <div class="mb-2 flex items-baseline justify-between gap-3">
             <label for="secret" class="font-mono text-[15px] font-bold text-ink">

@@ -15,11 +15,7 @@ export const openapi = {
       'hands the URL to its human, polls until it is filled, then reveals it once.',
   },
   servers: [{ url: config.baseUrl }],
-  security: [{ bearerAuth: [] }],
   components: {
-    securitySchemes: {
-      bearerAuth: { type: 'http', scheme: 'bearer', description: 'Service API key.' },
-    },
     schemas: {
       Request: {
         type: 'object',
@@ -141,7 +137,6 @@ export const openapi = {
             },
           },
           '400': { description: 'Invalid request' },
-          '401': { description: 'Missing or unknown API key' },
           '429': { description: 'Too many requests' },
         },
       },
@@ -229,7 +224,6 @@ export const openapi = {
       get: {
         operationId: 'health',
         summary: 'Health probe',
-        security: [],
         responses: { '200': { description: 'ok' } },
       },
     },

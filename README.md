@@ -32,8 +32,7 @@ being copied N times and forgotten in one of them.
 npm install
 cp apps/api/.env.example apps/api/.env
 
-# Generate a real API key and a real salt
-node -e "console.log('API_KEYS=' + require('crypto').randomBytes(32).toString('base64url'))"
+# Generate a real salt
 node -e "console.log('IP_HASH_SALT=' + require('crypto').randomBytes(16).toString('hex'))"
 
 npm start          # http://localhost:8787

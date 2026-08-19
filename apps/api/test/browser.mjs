@@ -10,7 +10,6 @@ import { createServer } from 'node:http'
 import Database from 'better-sqlite3'
 
 const BASE = process.env.BASE ?? 'http://localhost:8787'
-const KEY = process.env.API_KEY ?? 'dev_change_me'
 const SECRET = 'sk-gmail-b7f2a91c33ed4400bee1'
 const OUT = 'screenshots'
 
@@ -19,7 +18,7 @@ mkdirSync(OUT, { recursive: true })
 const api = (path, opts = {}) =>
   fetch(BASE + path, {
     ...opts,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}`, ...opts.headers },
+    headers: { 'content-type': 'application/json', ...opts.headers },
   })
 
 let failed = 0
@@ -37,9 +36,7 @@ const created = await (
       requester: 'Telegram Assistant',
       label: 'Gmail API key',
       purpose: 'Read your last 20 emails to send you a summary every morning',
-      ttl_seconds: 900,
-    }),
-  })
+      ttl_seconds: 900 }) })
 ).json()
 
 const browser = await chromium.launch(
@@ -127,8 +124,7 @@ console.log('\n\x1b[1mAgent retrieval\x1b[0m')
 const revealed = await (
   await api(`/v1/requests/${created.id}/reveal`, {
     method: 'POST',
-    body: JSON.stringify({ poll_token: created.poll_token, encryption_key: created.encryption_key }),
-  })
+    body: JSON.stringify({ poll_token: created.poll_token, encryption_key: created.encryption_key }) })
 ).json()
 check('the server decrypts what the browser encrypted', revealed.secret === SECRET, revealed.error ?? '')
 
@@ -146,11 +142,11 @@ console.log('\n\x1b[1mExpiry bar\x1b[0m')
   const aged = await (
     await api('/v1/requests', {
       method: 'POST',
-      body: JSON.stringify({ requester: 'Bot', label: 'Key', ttl_seconds: 900 }),
-    })
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', ttl_seconds: 900 }) })
   ).json()
 
-  const db = new Database('./data/chut.db')
+  // Must be the same file the server under test is using.
+  const db = new Database(process.env.DB_PATH ?? './data/chut.db')
   const readBar = async (elapsedRatio) => {
     const now = Date.now()
     const span = 900_000
@@ -191,8 +187,7 @@ console.log('\n\x1b[1mCross-site arrival\x1b[0m')
   const fresh = await (
     await api('/v1/requests', {
       method: 'POST',
-      body: JSON.stringify({ requester: 'Telegram Assistant', label: 'Stripe key' }),
-    })
+      body: JSON.stringify({ requester: 'Telegram Assistant', label: 'Stripe key' }) })
   ).json()
 
   // A different origin: distinct host, so a genuine cross-site navigation.
@@ -229,9 +224,7 @@ console.log('\n\x1b[1mCross-site arrival\x1b[0m')
         method: 'POST',
         body: JSON.stringify({
           poll_token: fresh.poll_token,
-          encryption_key: fresh.encryption_key,
-        }),
-      })
+          encryption_key: fresh.encryption_key }) })
     ).json()
     check(
       'the secret arrives intact after a cross-site journey',

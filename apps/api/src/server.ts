@@ -54,8 +54,8 @@ serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`chut is listening on http://localhost:${info.port}  (public: ${config.baseUrl})`)
   if (IS_INSECURE_DEFAULT) {
     console.warn(
-      '\n  WARNING: default values detected (API_KEYS and/or IP_HASH_SALT).\n' +
-        '  Do not deploy as-is. See .env.example.\n',
+      '\n  WARNING: IP_HASH_SALT is still the default value.\n' +
+        '  Filling fingerprints are guessable until you set it. See .env.example.\n',
     )
   }
   if (config.baseUrl.startsWith('http://') && !config.baseUrl.includes('localhost')) {

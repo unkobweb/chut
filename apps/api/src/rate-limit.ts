@@ -60,26 +60,14 @@ export function createRateLimit({
 }
 
 /**
- * Guards the authenticated API *before* the key is checked, so a failed
- * authentication is counted. Mounted after requireApiKey — as it was — a 401
- * returns before ever reaching the counter, and API keys can be guessed as fast
- * as the network allows.
- *
- * Budget is wider than the per-key one: several agents legitimately share an
- * outbound address.
+ * Guards request creation. Creating is open — there is no account and no key —
+ * so this is the only thing standing between the service and someone deciding to
+ * make a few thousand pages on it.
  */
 export const limitApiByIp = createRateLimit({
   scope: 'v1-ip',
   max: config.rateLimitPerMin * 3,
   message: 'Too many requests from this address.',
-})
-
-/** Per-API-key budget, applied once the caller is authenticated. */
-export const limitApiByKey = createRateLimit({
-  scope: 'v1-key',
-  max: config.rateLimitPerMin,
-  keyOf: (c) => `key:${c.get('apiKeyHash')}`,
-  message: `Rate limit of ${config.rateLimitPerMin} requests per minute reached.`,
 })
 
 /**

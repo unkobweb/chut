@@ -13,6 +13,7 @@ export interface Messages {
   intro: string
   wants: string
   unverified: string
+  caution: string
   inputLabel: string
   paste: string
   pasteFailed: string
@@ -67,6 +68,7 @@ const en: Messages = {
   /** Reads as one sentence: <requester> wants <label>. */
   wants: 'wants',
   unverified: 'Written by the assistant. This page cannot verify it.',
+  caution: 'Not expecting this? Close the tab — nothing is sent, and nothing happens.',
   inputLabel: 'paste the secret',
   paste: 'paste',
   pasteFailed: 'Your browser would not let this page read the clipboard — paste it yourself.',
@@ -127,6 +129,7 @@ const fr: Messages = {
   intro: 'Un assistant vous demande un identifiant confidentiel.',
   wants: 'demande',
   unverified: 'Écrit par l’assistant. Cette page ne peut pas le vérifier.',
+  caution: 'Vous ne l’attendiez pas ? Fermez l’onglet — rien n’est envoyé, rien ne se passe.',
   inputLabel: 'collez le secret',
   paste: 'coller',
   pasteFailed: 'Votre navigateur a refusé l’accès au presse-papier — collez la valeur vous-même.',
@@ -178,6 +181,7 @@ const es: Messages = {
   intro: 'Un asistente te pide una credencial.',
   wants: 'quiere',
   unverified: 'Escrito por el asistente. Esta página no puede verificarlo.',
+  caution: '¿No lo esperabas? Cierra la pestaña — no se envía nada y no pasa nada.',
   inputLabel: 'pega el secreto',
   paste: 'pegar',
   pasteFailed: 'Tu navegador no permitió leer el portapapeles — pégalo tú mismo.',
@@ -229,6 +233,7 @@ const de: Messages = {
   intro: 'Ein Assistent bittet Sie um einen Zugangsschlüssel.',
   wants: 'möchte',
   unverified: 'Vom Assistenten verfasst. Diese Seite kann es nicht überprüfen.',
+  caution: 'Nicht erwartet? Schließen Sie den Tab — es wird nichts gesendet, und nichts passiert.',
   inputLabel: 'Geheimnis einfügen',
   paste: 'einfügen',
   pasteFailed: 'Ihr Browser hat den Zugriff auf die Zwischenablage verweigert — fügen Sie es selbst ein.',

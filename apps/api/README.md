@@ -51,8 +51,7 @@ it in plaintext, and a copy of the database alone is not enough to read it.
 npm install
 cp .env.example .env
 
-# Generate a real API key and a real salt
-node -e "console.log('API_KEYS=' + require('crypto').randomBytes(32).toString('base64url'))"
+# Generate a real salt
 node -e "console.log('IP_HASH_SALT=' + require('crypto').randomBytes(16).toString('hex'))"
 
 npm start          # http://localhost:8787
@@ -74,7 +73,6 @@ node test/browser.mjs         # replays the journey in a real Chromium + screens
 
 ```bash
 curl -X POST http://localhost:8787/v1/requests \
-  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "requester": "Telegram Assistant",
@@ -102,7 +100,6 @@ both are required to read the secret, and **neither should ever be shown to the 
 
 ```bash
 curl http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb \
-  -H "Authorization: Bearer $API_KEY" \
   -H "X-Poll-Token: aB3x..."
 ```
 
@@ -119,7 +116,6 @@ curl http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb \
 
 ```bash
 curl -X POST http://localhost:8787/v1/requests/k3mq7rz2xp9wd4nb/reveal \
-  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"poll_token": "aB3x...", "encryption_key": "Xy7f..."}'
 ```
@@ -231,12 +227,11 @@ closed.
 |---|---|---|
 | `PORT` | `8787` | Listening port |
 | `BASE_URL` | `http://localhost:8787` | Public URL, the one embedded in the link |
-| `API_KEYS` | — | Accepted agent keys, comma-separated |
 | `DB_PATH` | `./data/chut.db` | SQLite file |
 | `DEFAULT_TTL_SECONDS` | `900` | Default lifetime |
 | `MAX_TTL_SECONDS` | `86400` | Ceiling |
 | `MAX_SECRET_BYTES` | `8192` | Maximum value size |
-| `RATE_LIMIT_PER_MIN` | `60` | Requests per minute per API key |
+| `RATE_LIMIT_PER_MIN` | `60` | Requests per minute per caller address |
 | `IP_HASH_SALT` | — | Salt for hashing IPs (raw IPs are never stored) |
 | `TRUST_PROXY_HOPS` | `0` | Number of trusted reverse proxies in front. `0` ignores forwarding headers |
 
@@ -247,11 +242,14 @@ rows that finished more than 7 days ago.
 
 ## Deployment
 
+The Dockerfile is at the repository root, and so is the build context — this is
+a workspace, so npm needs to see the lockfile above `apps/`.
+
 ```bash
+# from the repository root
 docker build -t chut .
 docker run -d --name chut -p 8787:8787 \
   -e BASE_URL=https://chut.example.com \
-  -e API_KEYS=$(openssl rand -base64 32 | tr -d '=+/') \
   -e IP_HASH_SALT=$(openssl rand -hex 16) \
   -v chut-data:/app/data \
   chut

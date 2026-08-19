@@ -1,5 +1,4 @@
 import { type Context, Hono } from 'hono'
-import { requireApiKey } from './auth.js'
 import { readJsonObject } from './body.js'
 import { config } from './config.js'
 import {
@@ -12,16 +11,14 @@ import {
 } from './crypto.js'
 import { effectiveStatus, queries, type RequestRow } from './db.js'
 import { sanitizeDisplayText } from './text.js'
-import { limitApiByIp, limitApiByKey } from './rate-limit.js'
+import { limitApiByIp } from './rate-limit.js'
 
 export const api = new Hono()
 
-// Order matters. The IP limiter runs FIRST so that failed authentication is
-// counted: mounted after requireApiKey, a 401 short-circuits before the counter
-// and API keys can be brute-forced at network speed.
+// Creating a request is open: no account, no key. The poll_token handed back at
+// creation is what authorises everything afterwards, so this limiter is the only
+// thing bounding how many requests one address can make.
 api.use('*', limitApiByIp)
-api.use('*', requireApiKey)
-api.use('*', limitApiByKey)
 
 const MAX_TEXT = { requester: 80, label: 120, purpose: 400 } as const
 
@@ -124,7 +121,6 @@ api.post('/requests', async (c) => {
 
   queries.insert.run({
     id,
-    api_key_hash: c.get('apiKeyHash'),
     poll_token_hash: sha256(pollToken),
     requester,
     label,
@@ -150,8 +146,8 @@ api.post('/requests', async (c) => {
 })
 
 /**
- * The poll_token proves the caller is the agent that created the request.
- * The API key alone is not enough: it may cover several agents.
+ * The poll_token proves the caller is the agent that created the request. It is
+ * 32 random bytes, returned once, stored hashed — guessing it is not a strategy.
  *
  * Accepted from the X-Poll-Token header or, for reveal, the JSON body — never
  * from the query string. A URL is the one part of a request that gets written
@@ -163,14 +159,6 @@ api.post('/requests', async (c) => {
  * Returns the response to send, or null when the caller is authorised.
  */
 function authorize(c: Context, row: RequestRow, bodyToken?: string): Response | null {
-  // Mismatched ownership answers 404 rather than 403, so the endpoint cannot be
-  // used to discover which ids exist under someone else's key.
-  if (!safeEqualHex(row.api_key_hash, c.get('apiKeyHash'))) {
-    return c.json({ error: 'not_found' }, 404)
-  }
-
-  // Checked after ownership: a distinct status on a row the caller does not own
-  // would be an existence oracle.
   if (c.req.query('poll_token') !== undefined) {
     return c.json(
       {

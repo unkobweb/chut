@@ -8,8 +8,6 @@ import http from 'node:http'
 
 export const PORT = 8801
 export const BASE = `http://localhost:${PORT}`
-export const KEY = 'primary_test_key'
-export const KEY2 = 'secondary_test_key'
 export const SALT = 'test_salt'
 export const DB = process.env.ATTACK_DB ?? './data/attacks.db'
 
@@ -39,7 +37,6 @@ export async function startServerOn(port, extraEnv = {}) {
       PORT: String(port),
       BASE_URL: base,
       DB_PATH: db,
-      API_KEYS: `${KEY},${KEY2}`,
       IP_HASH_SALT: SALT,
       ...extraEnv,
     },
@@ -76,7 +73,6 @@ export async function startServer(extraEnv = {}) {
       PORT: String(PORT),
       BASE_URL: BASE,
       DB_PATH: DB,
-      API_KEYS: `${KEY},${KEY2}`,
       IP_HASH_SALT: SALT,
       // Deliberately very high: rate limiting has its own test on a dedicated
       // server. Everywhere else it must not pollute the measurements.
@@ -99,25 +95,17 @@ export async function startServer(extraEnv = {}) {
 
 // --- shared helpers ---------------------------------------------------------
 
-export const api = (path, opts = {}, key = KEY) =>
+export const api = (path, opts = {}) =>
   fetch(BASE + path, {
     ...opts,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${key}`,
-      ...(opts.headers ?? {}),
-    },
+    headers: { 'content-type': 'application/json', ...(opts.headers ?? {}) },
   })
 
-export const createRequest = (body = {}, key = KEY) =>
-  api(
-    '/v1/requests',
-    {
-      method: 'POST',
-      body: JSON.stringify({ requester: 'Test agent', label: 'API key', ...body }),
-    },
-    key,
-  ).then((r) => r.json())
+export const createRequest = (body = {}) =>
+  api('/v1/requests', {
+    method: 'POST',
+    body: JSON.stringify({ requester: 'Test agent', label: 'API key', ...body }),
+  }).then((r) => r.json())
 
 /** Reproduces exactly what the browser page does when encrypting. */
 export async function browserEncrypt(keyB64url, plaintext) {

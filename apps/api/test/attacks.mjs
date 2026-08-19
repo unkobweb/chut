@@ -8,8 +8,7 @@ import { statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import {
   startServer, startServerOn, api, createRequest, fillRequest, concurrentPost,
-  browserEncrypt, BASE, KEY, DB, SALT, check, section, report,
-} from './harness.mjs'
+  browserEncrypt, BASE, DB, SALT, check, section, report } from './harness.mjs'
 
 /** Mirrors hashIp() server-side: sha256(salt:ip), truncated. */
 const expectedIpHash = (ip) =>
@@ -41,7 +40,7 @@ section('01 · Reveal race: revealing must be atomic')
     const responses = await concurrentPost(
       `/v1/requests/${req.id}/reveal`,
       { poll_token: req.poll_token, encryption_key: req.encryption_key },
-      { authorization: `Bearer ${KEY}` },
+      { },
       CONCURRENT,
     )
 
@@ -49,8 +48,7 @@ section('01 · Reveal race: revealing must be atomic')
       req,
       winners: responses.filter((r) => r.body.secret === SECRET).length,
       rejected: responses.filter((r) => r.status === 409).length,
-      leaked: responses.filter((r) => r.status !== 200 && r.body.secret !== undefined).length,
-    })
+      leaked: responses.filter((r) => r.status !== 200 && r.body.secret !== undefined).length })
   }
 
   const worst = Math.max(...outcomes.map((o) => o.winners))
@@ -78,8 +76,7 @@ section('01 · Reveal race: revealing must be atomic')
 
   const late = await api(`/v1/requests/${last.id}/reveal`, {
     method: 'POST',
-    body: JSON.stringify({ poll_token: last.poll_token, encryption_key: last.encryption_key }),
-  })
+    body: JSON.stringify({ poll_token: last.poll_token, encryption_key: last.encryption_key }) })
   check('a late reveal is refused', late.status === 409, `got ${late.status}`)
 }
 
@@ -99,8 +96,7 @@ section('02 · Unbounded fields: one request must not be able to bloat the datab
   const hugeIv = await fetch(`${BASE}/s/${bloat.id}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ciphertext: 'AAAA', iv: 'A'.repeat(5_000_000) }),
-  })
+    body: JSON.stringify({ ciphertext: 'AAAA', iv: 'A'.repeat(5_000_000) }) })
   await sleep(300)
   const afterIv = statSync(DB).size
 
@@ -129,8 +125,7 @@ section('02 · Unbounded fields: one request must not be able to bloat the datab
   const hugeCt = await fetch(`${BASE}/s/${bloat2.id}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ciphertext: 'A'.repeat(5_000_000), iv: 'AAAAAAAAAAAAAAAA' }),
-  })
+    body: JSON.stringify({ ciphertext: 'A'.repeat(5_000_000), iv: 'AAAAAAAAAAAAAAAA' }) })
   check('an oversized ciphertext is refused', hugeCt.status === 413, `got ${hugeCt.status}`)
 
   // 2.3 — a body far past the limit must die before being parsed into memory
@@ -138,8 +133,7 @@ section('02 · Unbounded fields: one request must not be able to bloat the datab
   const hugeBody = await fetch(`${BASE}/s/${bloat3.id}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: '{"padding":"' + 'A'.repeat(10_000_000) + '","ciphertext":"AAAA","iv":"AAAA"}',
-  }).catch(() => ({ status: 0 }))
+    body: '{"padding":"' + 'A'.repeat(10_000_000) + '","ciphertext":"AAAA","iv":"AAAA"}' }).catch(() => ({ status: 0 }))
   check('an oversized body is refused', hugeBody.status === 413, `got ${hugeBody.status}`)
 
   // 2.4 — the legitimate path must keep working
@@ -150,8 +144,7 @@ section('02 · Unbounded fields: one request must not be able to bloat the datab
   const revealed = await (
     await api(`/v1/requests/${ok.id}/reveal`, {
       method: 'POST',
-      body: JSON.stringify({ poll_token: ok.poll_token, encryption_key: ok.encryption_key }),
-    })
+      body: JSON.stringify({ poll_token: ok.poll_token, encryption_key: ok.encryption_key }) })
   ).json()
   check(
     'and the secret still round-trips intact',
@@ -191,8 +184,7 @@ section('03 · Confirmation page: no unauthenticated leak, no existence oracle')
 
   await api(`/v1/requests/${req.id}/reveal`, {
     method: 'POST',
-    body: JSON.stringify({ poll_token: req.poll_token, encryption_key: req.encryption_key }),
-  })
+    body: JSON.stringify({ poll_token: req.poll_token, encryption_key: req.encryption_key }) })
 
   const afterBurn = await fetch(`${BASE}/s/${req.id}/done`)
   check(
@@ -234,30 +226,30 @@ section('03 · Confirmation page: no unauthenticated leak, no existence oracle')
 }
 
 // =============================================================================
-section('04 · Rate limiting must cover failed auth and public routes')
+section('04 · Rate limiting must cover rejected requests and public routes')
 // =============================================================================
-// The limiter was mounted after requireApiKey and keyed on the API key hash, so a
-// 401 never reached it: API keys could be brute-forced without any throttling.
-// The public /s/:id routes were mounted outside the /v1 group entirely and had no
-// limiter at all — which let an attacker flood opened_count and drown the very
-// signal the agent uses to warn its human about a suspicious link.
+// The limiter must be mounted before validation, and keyed on the caller's
+// address: a request that gets rejected still costs the server work, so it has
+// to count against the bucket. The public /s/:id routes were mounted outside the
+// /v1 group entirely and had no limiter at all — which let an attacker flood
+// opened_count and drown the very signal the agent uses to warn its human about
+// a suspicious link.
 {
   const LIMIT = 10
   const burstOn = (base) => (path, opts = {}, n = LIMIT * 4) =>
     Promise.all(Array.from({ length: n }, () => fetch(base + path, opts).then((r) => r.status)))
 
-  // --- server A: public reads, then failed auth ---------------------------
+  // --- server A: public reads, then rejected writes ------------------------
   // Order matters here: a saturated /v1 bucket would make the opened_count read
-  // fail with a 429, so the brute-force burst has to come last.
+  // fail with a 429, so the burst of invalid writes has to come last.
   const a = await startServerOn(8802, { RATE_LIMIT_PER_MIN: String(LIMIT) })
   const burstA = burstOn(a.base)
   try {
     const created = await (
       await fetch(`${a.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
 
     const opens = await burstA(`/s/${created.id}`, {}, LIMIT * 6)
@@ -274,8 +266,7 @@ section('04 · Rate limiting must cover failed auth and public routes')
 
     const state = await (
       await fetch(`${a.base}/v1/requests/${created.id}`, {
-        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': created.poll_token },
-      })
+        headers: { 'x-poll-token': created.poll_token } })
     ).json()
     check(
       'opened_count cannot be inflated at will',
@@ -283,19 +274,18 @@ section('04 · Rate limiting must cover failed auth and public routes')
       `opened_count reached ${state.opened_count} — the tamper signal is drownable`,
     )
 
-    const badKeys = await burstA(
+    const rejected = await burstA(
       '/v1/requests',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: 'Bearer wrong_key' },
-        body: '{}',
-      },
+        headers: { 'content-type': 'application/json' },
+        body: '{}' },
       LIMIT * 8,
     )
     check(
-      'failed authentication is rate limited',
-      badKeys.filter((s) => s === 429).length > 0,
-      `${badKeys.filter((s) => s === 401).length} x 401, 0 x 429 — unlimited guessing`,
+      'requests rejected by validation still count against the limit',
+      rejected.filter((s) => s === 429).length > 0,
+      `${rejected.filter((s) => s === 400).length} x 400, 0 x 429 — unlimited retries`,
     )
   } finally {
     a.proc.kill()
@@ -310,15 +300,13 @@ section('04 · Rate limiting must cover failed auth and public routes')
     const created = await (
       await fetch(`${b.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
     const fills = await burstOn(b.base)(`/s/${created.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ciphertext: 'AAAA', iv: 'AAAAAAAAAAAAAAAA' }),
-    })
+      body: JSON.stringify({ ciphertext: 'AAAA', iv: 'AAAAAAAAAAAAAAAA' }) })
     check(
       'the public fill endpoint is rate limited',
       fills.filter((s) => s === 429).length > 0,
@@ -334,15 +322,13 @@ section('04 · Rate limiting must cover failed auth and public routes')
     const req = await (
       await fetch(`${c.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
     const page = await fetch(`${c.base}/s/${req.id}`)
     check('normal traffic is untouched by the limiter', page.status === 200, `got ${page.status}`)
     const poll = await fetch(`${c.base}/v1/requests/${req.id}`, {
-      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
-    })
+      headers: { 'x-poll-token': req.poll_token } })
     check('and polling still works', poll.status === 200, `got ${poll.status}`)
   } finally {
     c.proc.kill()
@@ -374,8 +360,7 @@ section('05 · burn_on_reveal must never fail open')
   for (const value of ['true', 'false', 1, 0, [], {}, 'yes']) {
     const res = await api('/v1/requests', {
       method: 'POST',
-      body: JSON.stringify({ requester: 'Bot', label: 'Key', burn_on_reveal: value }),
-    })
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', burn_on_reveal: value }) })
     const body = await res.json()
     check(
       `burn_on_reveal: ${JSON.stringify(value)} is rejected`,
@@ -392,8 +377,7 @@ section('05 · burn_on_reveal must never fail open')
   const reveal = (r) =>
     api(`/v1/requests/${r.id}/reveal`, {
       method: 'POST',
-      body: JSON.stringify({ poll_token: r.poll_token, encryption_key: r.encryption_key }),
-    })
+      body: JSON.stringify({ poll_token: r.poll_token, encryption_key: r.encryption_key }) })
 
   const firstBurn = await reveal(burning)
   const secondBurn = await reveal(burning)
@@ -428,19 +412,16 @@ section('06 · X-Forwarded-For must not be believed by default')
     const created = await (
       await fetch(`${base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
     await fetch(`${base}/s/${created.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify({ ciphertext: 'AAAAAAAAAAAA', iv: 'AAAAAAAAAAAAAAAA' }),
-    })
+      body: JSON.stringify({ ciphertext: 'AAAAAAAAAAAA', iv: 'AAAAAAAAAAAAAAAA' }) })
     const state = await (
       await fetch(`${base}/v1/requests/${created.id}`, {
-        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': created.poll_token },
-      })
+        headers: { 'x-poll-token': created.poll_token } })
     ).json()
     return state.filled_from_ip_hash
   }
@@ -477,8 +458,7 @@ section('06 · X-Forwarded-For must not be believed by default')
   // --- behind one trusted proxy: the header is used, but only as far as told -
   const proxied = await startServerOn(8806, {
     RATE_LIMIT_PER_MIN: '1000',
-    TRUST_PROXY_HOPS: '1',
-  })
+    TRUST_PROXY_HOPS: '1' })
   try {
     const client = await fillWithHeaders(proxied.base, { 'x-forwarded-for': '203.0.113.7' })
     check(
@@ -490,8 +470,7 @@ section('06 · X-Forwarded-For must not be believed by default')
     // The client controls what it sends; the proxy appends the address it saw.
     // Entries the client prepended must be discarded, not read as the origin.
     const prepended = await fillWithHeaders(proxied.base, {
-      'x-forwarded-for': '9.9.9.9, 203.0.113.7',
-    })
+      'x-forwarded-for': '9.9.9.9, 203.0.113.7' })
     check(
       'entries prepended by the client are ignored',
       prepended === expectedIpHash('203.0.113.7'),
@@ -518,11 +497,9 @@ section('06 · X-Forwarded-For must not be believed by default')
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            authorization: 'Bearer wrong_key',
             'x-forwarded-for': `10.0.0.${i}`,
           },
-          body: '{}',
-        }).then((r) => r.status),
+          body: '{}' }).then((r) => r.status),
       ),
     )
     check(
@@ -551,9 +528,8 @@ section('07 · poll_token must never travel in a URL')
       (
         await fetch(`${srv.base}/v1/requests`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-          body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-        })
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
       ).json()
 
     const req = await create()
@@ -561,7 +537,7 @@ section('07 · poll_token must never travel in a URL')
     // 7.1 — the query string must not authenticate anything
     const viaQuery = await fetch(
       `${srv.base}/v1/requests/${req.id}?poll_token=${encodeURIComponent(req.poll_token)}`,
-      { headers: { authorization: `Bearer ${KEY}` } },
+      { headers: { } },
     )
     check(
       'a poll_token in the query string does not authorise the call',
@@ -578,24 +554,20 @@ section('07 · poll_token must never travel in a URL')
 
     // 7.2 — the supported channels still work
     const viaHeader = await fetch(`${srv.base}/v1/requests/${req.id}`, {
-      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
-    })
+      headers: { 'x-poll-token': req.poll_token } })
     check('the X-Poll-Token header still works', viaHeader.status === 200, `got ${viaHeader.status}`)
 
     const filled = await create()
     await fetch(`${srv.base}/s/${filled.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(await browserEncrypt(filled.encryption_key, 'sk-body-channel')),
-    })
+      body: JSON.stringify(await browserEncrypt(filled.encryption_key, 'sk-body-channel')) })
     const viaBody = await fetch(`${srv.base}/v1/requests/${filled.id}/reveal`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         poll_token: filled.poll_token,
-        encryption_key: filled.encryption_key,
-      }),
-    })
+        encryption_key: filled.encryption_key }) })
     check(
       'the JSON body channel still works for reveal',
       viaBody.status === 200 && (await viaBody.json()).secret === 'sk-body-channel',
@@ -603,8 +575,7 @@ section('07 · poll_token must never travel in a URL')
 
     // 7.3 — a wrong token in the right place is still a plain 403
     const wrong = await fetch(`${srv.base}/v1/requests/${req.id}`, {
-      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': 'not-the-token' },
-    })
+      headers: { 'x-poll-token': 'not-the-token' } })
     check('a wrong token in the header is still refused', wrong.status === 403, `got ${wrong.status}`)
 
     // 7.4 — and our own access log must never contain a token, even when a
@@ -636,15 +607,13 @@ section('08 · Link previews must not consume the tamper signal')
     (
       await fetch(`${srv.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
   const stateOf = async (r) =>
     (
       await fetch(`${srv.base}/v1/requests/${r.id}`, {
-        headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': r.poll_token },
-      })
+        headers: { 'x-poll-token': r.poll_token } })
     ).json()
 
   try {
@@ -686,8 +655,7 @@ section('08 · Link previews must not consume the tamper signal')
     // 8.4 — the realistic sequence: previews, then the human. Exactly one open.
     const realistic = await create()
     await fetch(`${srv.base}/s/${realistic.id}`, {
-      headers: { 'user-agent': 'TelegramBot (like TwitterBot)' },
-    })
+      headers: { 'user-agent': 'TelegramBot (like TwitterBot)' } })
     await fetch(`${srv.base}/s/${realistic.id}`)
     await fetch(`${srv.base}/s/${realistic.id}/opened`, { method: 'POST' })
     const human = await stateOf(realistic)
@@ -701,8 +669,7 @@ section('08 · Link previews must not consume the tamper signal')
     const finished = await create()
     await fetch(`${srv.base}/v1/requests/${finished.id}`, {
       method: 'DELETE',
-      headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': finished.poll_token },
-    })
+      headers: { 'x-poll-token': finished.poll_token } })
     await fetch(`${srv.base}/s/${finished.id}/opened`, { method: 'POST' })
     const cancelled = await stateOf(finished)
     check(
@@ -745,16 +712,14 @@ section('09 · Cross-site requests must not be able to fill a slot')
     (
       await fetch(`${srv.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
   const statusOf = async (r) =>
     (
       await (
         await fetch(`${srv.base}/v1/requests/${r.id}`, {
-          headers: { authorization: `Bearer ${KEY}`, 'x-poll-token': r.poll_token },
-        })
+          headers: { 'x-poll-token': r.poll_token } })
       ).json()
     ).status
 
@@ -766,8 +731,7 @@ section('09 · Cross-site requests must not be able to fill a slot')
     const viaPlainText = await fetch(`${srv.base}/s/${plain.id}`, {
       method: 'POST',
       headers: { 'content-type': 'text/plain' },
-      body: await payload(plain),
-    })
+      body: await payload(plain) })
     check(
       'a text/plain body is refused',
       viaPlainText.status === 415 || viaPlainText.status === 400,
@@ -784,8 +748,7 @@ section('09 · Cross-site requests must not be able to fill a slot')
     const viaEvilOrigin = await fetch(`${srv.base}/s/${crossOrigin.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
-      body: await payload(crossOrigin),
-    })
+      body: await payload(crossOrigin) })
     check('a cross-site Origin is refused', viaEvilOrigin.status === 403, `got ${viaEvilOrigin.status}`)
     check(
       'and that link is untouched too',
@@ -797,8 +760,7 @@ section('09 · Cross-site requests must not be able to fill a slot')
     const viaFetchMetadata = await fetch(`${srv.base}/s/${fetchSite.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
-      body: await payload(fetchSite),
-    })
+      body: await payload(fetchSite) })
     check(
       'Sec-Fetch-Site: cross-site is refused',
       viaFetchMetadata.status === 403,
@@ -809,8 +771,7 @@ section('09 · Cross-site requests must not be able to fill a slot')
     const beacon = await create()
     const viaEvilBeacon = await fetch(`${srv.base}/s/${beacon.id}/opened`, {
       method: 'POST',
-      headers: { origin: 'https://evil.example' },
-    })
+      headers: { origin: 'https://evil.example' } })
     check('the open beacon refuses a cross-site origin', viaEvilBeacon.status === 403)
 
     // 9.5 — everything legitimate still works: the page itself, and API clients
@@ -820,10 +781,8 @@ section('09 · Cross-site requests must not be able to fill a slot')
       headers: {
         'content-type': 'application/json',
         origin: srv.base,
-        'sec-fetch-site': 'same-origin',
-      },
-      body: await payload(sameOrigin),
-    })
+        'sec-fetch-site': 'same-origin' },
+      body: await payload(sameOrigin) })
     check('the page fills its own slot normally', viaSameOrigin.status === 200, `got ${viaSameOrigin.status}`)
 
     // curl, an agent, a script: no Origin at all. Browsers always send Origin on a
@@ -832,8 +791,7 @@ section('09 · Cross-site requests must not be able to fill a slot')
     const viaNoOrigin = await fetch(`${srv.base}/s/${headless.id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: await payload(headless),
-    })
+      body: await payload(headless) })
     check('a client with no Origin still works', viaNoOrigin.status === 200, `got ${viaNoOrigin.status}`)
   } finally {
     srv.proc.kill()
@@ -859,9 +817,8 @@ section('10 · Malformed bodies must never reach the error handler')
     const req = await (
       await fetch(`${srv.base}/v1/requests`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ requester: 'Bot', label: 'Key' }),
-      })
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requester: 'Bot', label: 'Key' }) })
     ).json()
 
     // Every JSON value that is not an object, on every endpoint that reads a body.
@@ -871,22 +828,19 @@ section('10 · Malformed bodies must never reach the error handler')
       {
         name: 'POST /v1/requests',
         url: `${srv.base}/v1/requests`,
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-      },
+        headers: { 'content-type': 'application/json' } },
       {
         name: 'POST /v1/requests/:id/reveal',
         url: `${srv.base}/v1/requests/${req.id}/reveal`,
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${KEY}`,
           'x-poll-token': req.poll_token,
         },
       },
       {
         name: 'POST /s/:id',
         url: `${srv.base}/s/${req.id}`,
-        headers: { 'content-type': 'application/json' },
-      },
+        headers: { 'content-type': 'application/json' } },
     ]
 
     for (const endpoint of endpoints) {
@@ -908,16 +862,14 @@ section('10 · Malformed bodies must never reach the error handler')
       const res = await fetch(endpoint.url, {
         method: 'POST',
         headers: endpoint.headers,
-        body: '{"unterminated": ',
-      })
+        body: '{"unterminated": ' })
       check(`${endpoint.name} answers 4xx for malformed JSON`, res.status < 500, `got ${res.status}`)
     }
 
     // A body that is absent entirely is not the same as a broken one.
     const noBody = await fetch(`${srv.base}/v1/requests/${req.id}/reveal`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}`, 'x-poll-token': req.poll_token },
-    })
+      headers: { 'content-type': 'application/json', 'x-poll-token': req.poll_token } })
     check('an empty body is handled without a crash', noBody.status < 500, `got ${noBody.status}`)
 
     // The strongest statement: nothing above reached the unhandled-error path.
@@ -952,9 +904,8 @@ section('11 · Invisible Unicode must not reach the page a human reads')
   const create = (body) =>
     fetch(`${srv.base}/v1/requests`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}` },
-      body: JSON.stringify({ requester: 'Bot', label: 'Key', ...body }),
-    })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requester: 'Bot', label: 'Key', ...body }) })
 
   try {
     // 11.1 - characters that reorder or hide text have no place in a short label

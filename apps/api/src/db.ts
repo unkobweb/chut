@@ -12,7 +12,6 @@ db.pragma('foreign_keys = ON')
 db.exec(`
 CREATE TABLE IF NOT EXISTS requests (
   id               TEXT PRIMARY KEY,
-  api_key_hash     TEXT NOT NULL,
   poll_token_hash  TEXT NOT NULL,
 
   requester        TEXT NOT NULL,
@@ -55,9 +54,23 @@ function addColumnIfMissing(column: string, definition: string) {
 
 addColumnIfMissing('fetched_count', 'INTEGER NOT NULL DEFAULT 0')
 
+/**
+ * Creating a request no longer needs a key, so nothing owns a row any more: the
+ * poll_token returned once at creation is what proves the caller made it, and it
+ * always was — the key check sat beside it doing nothing the token did not
+ * already do.
+ */
+function dropColumnIfPresent(column: string) {
+  const existing = db.prepare(`PRAGMA table_info(requests)`).all() as { name: string }[]
+  if (existing.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE requests DROP COLUMN ${column}`)
+  }
+}
+
+dropColumnIfPresent('api_key_hash')
+
 export interface RequestRow {
   id: string
-  api_key_hash: string
   poll_token_hash: string
   requester: string
   label: string
@@ -80,10 +93,10 @@ export interface RequestRow {
 export const queries = {
   insert: db.prepare(`
     INSERT INTO requests (
-      id, api_key_hash, poll_token_hash, requester, label, purpose,
+      id, poll_token_hash, requester, label, purpose,
       status, burn_on_reveal, created_at, expires_at
     ) VALUES (
-      @id, @api_key_hash, @poll_token_hash, @requester, @label, @purpose,
+      @id, @poll_token_hash, @requester, @label, @purpose,
       'pending', @burn_on_reveal, @created_at, @expires_at
     )
   `),

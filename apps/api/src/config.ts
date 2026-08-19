@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-
 function env(name: string, fallback?: string): string {
   const v = process.env[name]
   if (v === undefined || v === '') {
@@ -26,18 +24,6 @@ function envIntFromZero(name: string, fallback: number): number {
   return n
 }
 
-const apiKeys = env('API_KEYS', 'dev_change_me')
-  .split(',')
-  .map((k) => k.trim())
-  .filter(Boolean)
-
-if (apiKeys.length === 0) throw new Error('API_KEYS cannot be empty')
-
-/** API keys are never held in plaintext, only as SHA-256 digests. */
-export const API_KEY_HASHES = new Set(
-  apiKeys.map((k) => createHash('sha256').update(k).digest('hex')),
-)
-
 export const config = {
   port: envInt('PORT', 8787),
   baseUrl: env('BASE_URL', 'http://localhost:8787').replace(/\/+$/, ''),
@@ -55,5 +41,4 @@ export const config = {
   trustProxyHops: envIntFromZero('TRUST_PROXY_HOPS', 0),
 } as const
 
-export const IS_INSECURE_DEFAULT =
-  apiKeys.includes('dev_change_me') || config.ipHashSalt === 'change_me_too'
+export const IS_INSECURE_DEFAULT = config.ipHashSalt === 'change_me_too'

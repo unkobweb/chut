@@ -7,7 +7,6 @@
  */
 
 const BASE = process.env.CHUT_URL ?? 'http://localhost:8787'
-const API_KEY = process.env.CHUT_API_KEY ?? 'dev_change_me'
 
 /**
  * Creates a request. Returns the URL to show the human, plus the tokens to keep secret.
@@ -15,7 +14,7 @@ const API_KEY = process.env.CHUT_API_KEY ?? 'dev_change_me'
 export async function askHuman({ requester, label, purpose, ttlSeconds = 900 }) {
   const res = await fetch(`${BASE}/v1/requests`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${API_KEY}` },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ requester, label, purpose, ttl_seconds: ttlSeconds }),
   })
   if (!res.ok) throw new Error(`chut: request creation refused (${res.status})`)
@@ -29,7 +28,7 @@ export async function askHuman({ requester, label, purpose, ttlSeconds = 900 }) 
 export async function waitForFill({ id, poll_token }, { intervalMs = 3000 } = {}) {
   for (;;) {
     const res = await fetch(`${BASE}/v1/requests/${id}`, {
-      headers: { authorization: `Bearer ${API_KEY}`, 'x-poll-token': poll_token },
+      headers: { 'x-poll-token': poll_token },
     })
     const req = await res.json()
 
@@ -44,7 +43,7 @@ export async function waitForFill({ id, poll_token }, { intervalMs = 3000 } = {}
 export async function reveal({ id, poll_token, encryption_key }) {
   const res = await fetch(`${BASE}/v1/requests/${id}/reveal`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${API_KEY}` },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ poll_token, encryption_key }),
   })
   const data = await res.json()

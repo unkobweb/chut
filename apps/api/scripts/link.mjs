@@ -31,7 +31,6 @@ function loadEnvFile() {
 loadEnvFile()
 
 const BASE = (process.env.BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
-const API_KEY = (process.env.API_KEYS ?? 'dev_change_me').split(',')[0].trim()
 
 // --- arguments ---------------------------------------------------------------
 
@@ -49,8 +48,7 @@ const defaults = {
   requester: option('requester', "Deploy bot — Max's coding assistant"),
   label: option('label', 'Vercel deploy token'),
   purpose: option('purpose', 'To publish the website you asked for. Used once, for that deployment.'),
-  ttl_seconds: Number(option('ttl', '900')),
-}
+  ttl_seconds: Number(option('ttl', '900')) }
 
 // --- terminal ----------------------------------------------------------------
 
@@ -59,8 +57,7 @@ const c = {
   bold: (s) => `\x1b[1m${s}\x1b[0m`,
   green: (s) => `\x1b[32m${s}\x1b[0m`,
   red: (s) => `\x1b[31m${s}\x1b[0m`,
-  cyan: (s) => `\x1b[36m${s}\x1b[0m`,
-}
+  cyan: (s) => `\x1b[36m${s}\x1b[0m` }
 
 // --- api ---------------------------------------------------------------------
 
@@ -69,7 +66,6 @@ const api = (path, opts = {}) =>
     ...opts,
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${API_KEY}`,
       ...(opts.headers ?? {}),
     },
   })
@@ -89,14 +85,10 @@ async function ensureServer() {
 async function create(overrides = {}) {
   const res = await api('/v1/requests', {
     method: 'POST',
-    body: JSON.stringify({ ...defaults, ...overrides }),
-  })
+    body: JSON.stringify({ ...defaults, ...overrides }) })
   const body = await res.json()
   if (!res.ok) {
     console.error(`\n${c.red('Creation refused')} (${res.status}): ${body.message ?? body.error}\n`)
-    if (res.status === 401) {
-      console.error(`The key being sent is ${c.dim(API_KEY)} — set API_KEYS in apps/api/.env\n`)
-    }
     process.exit(1)
   }
   return body
@@ -114,9 +106,7 @@ async function fill(request, value) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       ciphertext: Buffer.from(ct).toString('base64'),
-      iv: Buffer.from(iv).toString('base64'),
-    }),
-  })
+      iv: Buffer.from(iv).toString('base64') }) })
 }
 
 // --- one link per page state --------------------------------------------------
@@ -134,8 +124,7 @@ async function allStates() {
   const cancelled = await create()
   await api(`/v1/requests/${cancelled.id}`, {
     method: 'DELETE',
-    headers: { 'x-poll-token': cancelled.poll_token },
-  })
+    headers: { 'x-poll-token': cancelled.poll_token } })
   rows.push(['request withdrawn', withLang(`${BASE}/s/${cancelled.id}`)])
 
   const expiring = await create({ ttl_seconds: 30 })
@@ -198,9 +187,7 @@ async function watchOne() {
         method: 'POST',
         body: JSON.stringify({
           poll_token: request.poll_token,
-          encryption_key: request.encryption_key,
-        }),
-      })
+          encryption_key: request.encryption_key }) })
     ).json()
 
     console.log(`\r  ${c.green('filled')}                              \n`)
