@@ -138,36 +138,23 @@ export function FormPage(props: {
         <h1 class="sr-only">{t.intro}</h1>
 
         {/* What the agent claims. Presented as a claim, never as a fact. */}
-        <section class={`${PANEL} mb-4 p-4 leading-snug`}>
-          <p class={LABEL}>{t.whoLabel}</p>
-          <p class="mb-2.5 font-mono text-[15px] font-semibold break-words text-ink">
-            {props.requester}
-          </p>
-
-          <p class={LABEL}>{t.whatLabel}</p>
+        {/*
+          * Reads as a sentence — <requester> wants <label> — rather than a form
+          * with three labelled rows. Same three facts, a third of the lines.
+          */}
+        <section class={`${PANEL} mb-5 p-4 leading-snug`}>
+          <p class="font-mono text-[15px] font-semibold break-words text-ink">{props.requester}</p>
+          <p class={`${LABEL} my-0.5`}>{t.wants}</p>
           <p class="font-mono text-[15px] font-semibold break-words text-ink">{props.label}</p>
 
           {props.purpose ? (
-            <>
-              <p class={`${LABEL} mt-2.5`}>{t.whyLabel}</p>
-              <p class="text-sm leading-relaxed break-words text-dim">“{props.purpose}”</p>
-            </>
+            <p class="mt-2 text-sm leading-snug break-words text-dim">“{props.purpose}”</p>
           ) : null}
 
           <p class="mt-3 border-t border-line pt-2.5 text-xs leading-snug text-faint">
             {t.unverified}
           </p>
         </section>
-
-        {/*
-          * Fixed text. The agent cannot alter or remove it — that is its value.
-          * Muted green rather than amber, as drawn: amber shouts danger, and a
-          * page that shouts is a page that reads as a scam. This has to be
-          * noticed and read, not obeyed in a panic.
-          */}
-        <p class="mb-5 bg-deep/50 px-4 py-3 text-[13.5px] leading-snug text-dim">
-          {t.caution}
-        </p>
 
         <form id="form" novalidate>
           <div class="mb-2 flex items-baseline justify-between gap-3">

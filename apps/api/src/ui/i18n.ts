@@ -11,11 +11,8 @@
 export interface Messages {
   tagline: string
   intro: string
-  whoLabel: string
-  whatLabel: string
-  whyLabel: string
+  wants: string
   unverified: string
-  caution: string
   inputLabel: string
   show: string
   hide: string
@@ -65,12 +62,9 @@ const en: Messages = {
    * "cannot verify" note already says to read it critically — spelling all of
    * that out again pushed the button off the screen. */
   intro: 'An assistant is asking you for a credential.',
-  whoLabel: 'who is asking',
-  whatLabel: 'what it wants',
-  whyLabel: 'why, in its words',
+  /** Reads as one sentence: <requester> wants <label>. */
+  wants: 'wants',
   unverified: 'Written by the assistant. This page cannot verify it.',
-  caution:
-    'Only continue if you were expecting this. No real service asks for a master password or recovery code this way. Closing this tab is always safe.',
   inputLabel: 'paste the secret',
   show: 'show',
   hide: 'hide',
