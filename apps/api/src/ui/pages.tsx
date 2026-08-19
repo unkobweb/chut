@@ -8,11 +8,13 @@ function safeJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
-const LABEL = 'font-mono text-[11px] uppercase tracking-[0.14em] text-faint'
+// Lowercase, as drawn. Uppercase tracked labels read as officialdom, and
+// officialdom is the register a phishing page reaches for.
+const LABEL = 'font-mono text-[13px] text-faint'
 const PANEL = 'rounded-lg border border-line bg-panel'
 
 function Card({ children }: { children: Child }) {
-  return <div class="w-full">{children}</div>
+  return <div class="w-full rounded-xl border border-line bg-panel p-5 sm:p-7">{children}</div>
 }
 
 function Header({ locale, right }: { locale: Locale; right?: Child }) {
@@ -31,12 +33,25 @@ function Header({ locale, right }: { locale: Locale; right?: Child }) {
  * The countdown. Its own element so the script can update it, and aria-live so a
  * screen reader hears time running out rather than only seeing it.
  */
+/**
+ * The countdown, with the bar the mockups drew.
+ *
+ * It sits at the foot of the ready state and moves to the header once the value
+ * is on its way. That is deliberate: no clock ticking in someone's face while
+ * they are deciding whether to trust the request, and a visible one once they
+ * have committed and are waiting.
+ */
 function Countdown({ locale }: { locale: Locale }) {
   return (
-    <div class="shrink-0 text-end font-mono text-xs text-dim">
-      <span class="text-faint">{locale.t.expires}</span>{' '}
-      <span id="countdown" aria-live="polite" class="tabular-nums text-ink">
-        —
+    <div id="countdown-block" class="mt-5 flex items-center gap-3">
+      <span class="font-mono text-[13px] whitespace-nowrap text-faint">
+        {locale.t.expires}{' '}
+        <span id="countdown" aria-live="polite" class="tabular-nums text-dim">
+          —
+        </span>
+      </span>
+      <span class="h-2.5 flex-1 overflow-hidden rounded-xs bg-line" aria-hidden="true">
+        <span id="countdown-bar" class="block h-full w-full bg-phosphor/70" />
       </span>
     </div>
   )
@@ -78,7 +93,8 @@ export function FormPage(props: {
   return render(
     <Layout title={`${props.requester} — ${props.label}`} nonce={nonce} locale={locale} script={CLIENT_SCRIPT.replace('__CONFIG__', config)}>
       <Card>
-        <Header locale={locale} right={<Countdown locale={locale} />} />
+        {/* Empty on purpose: the countdown moves in here once the value is sent. */}
+        <Header locale={locale} right={<div id="header-slot" class="w-28 shrink-0" />} />
 
         {/*
           * The document heading. It states what is happening rather than
@@ -111,21 +127,26 @@ export function FormPage(props: {
           </p>
         </section>
 
-        {/* Fixed text. The agent cannot alter or remove it — that is its value. */}
-        <p class="mb-6 rounded-lg border border-caution/25 bg-caution/5 p-4 text-[13px] leading-relaxed text-caution">
+        {/*
+          * Fixed text. The agent cannot alter or remove it — that is its value.
+          * Muted green rather than amber, as drawn: amber shouts danger, and a
+          * page that shouts is a page that reads as a scam. This has to be
+          * noticed and read, not obeyed in a panic.
+          */}
+        <p class="mb-6 rounded-lg bg-deep/50 p-4 text-[14px] leading-relaxed text-dim">
           {t.caution}
         </p>
 
         <form id="form" novalidate>
           <div class="mb-2 flex items-baseline justify-between gap-3">
-            <label for="secret" class={LABEL}>
+            <label for="secret" class="font-mono text-[15px] font-bold text-ink">
               {t.inputLabel}
             </label>
             <button
               type="button"
               id="toggle"
               aria-pressed="false"
-              class="font-mono text-xs text-phosphor underline-offset-4 hover:underline"
+              class="font-mono text-sm text-phosphor underline-offset-4 hover:underline"
             >
               [ {t.show} ]
             </button>
@@ -170,10 +191,12 @@ export function FormPage(props: {
           <p class="pt-1 text-faint">{t.keepOpen}</p>
         </div>
 
-        <div id="field-note" class="mt-5 space-y-1 text-xs leading-relaxed text-faint">
+        <div id="field-note" class="mt-5 space-y-2 text-[13px] leading-relaxed text-faint">
           <p>{t.noteEncrypted}</p>
           <p>{t.noteSingleUse}</p>
         </div>
+
+        <Countdown locale={locale} />
       </Card>
     </Layout>,
   )
@@ -339,16 +362,22 @@ const CLIENT_SCRIPT = `
   // and never reach here, which is what keeps opened_count meaningful.
   try { fetch('/s/' + CFG.id + '/opened', { method: 'POST', keepalive: true }).catch(function(){}); } catch (e) {}
 
+  var bar = document.getElementById('countdown-bar');
+  var total = Math.max(1, CFG.expiresAt - Date.now());
   var dead = false;
   function tick() {
-    var left = Math.max(0, Math.round((CFG.expiresAt - Date.now()) / 1000));
+    var remaining = CFG.expiresAt - Date.now();
+    var left = Math.max(0, Math.round(remaining / 1000));
     if (left <= 0) {
       countdown.textContent = CFG.t.expired;
+      if (bar) bar.style.width = '0%';
+      // A real server-side transition: the reload renders the expired state.
       if (!dead) { dead = true; location.replace('/s/' + CFG.id); }
       return;
     }
     var m = Math.floor(left / 60), s = left % 60;
-    countdown.textContent = m > 0 ? m + ':' + String(s).padStart(2, '0') : '0:' + String(s).padStart(2, '0');
+    countdown.textContent = m + ':' + String(s).padStart(2, '0');
+    if (bar) bar.style.width = Math.max(0, Math.min(100, (remaining / total) * 100)) + '%';
     setTimeout(tick, 1000);
   }
   tick();
@@ -387,6 +416,17 @@ const CLIENT_SCRIPT = `
     submit.disabled = true;
     submit.textContent = CFG.t.encrypting;
     progress.hidden = false;
+
+    // Committed now, so the clock moves up into view. Moved rather than
+    // duplicated: two elements sharing an id is invalid, and getElementById
+    // would silently drive only the first one.
+    var slot = document.getElementById('header-slot');
+    var block = document.getElementById('countdown-block');
+    if (slot && block) {
+      block.classList.remove('mt-5');
+      block.classList.add('text-xs');
+      slot.appendChild(block);
+    }
 
     var iv = crypto.getRandomValues(new Uint8Array(12));
     crypto.subtle.importKey('raw', keyBytes(rawKey), { name: 'AES-GCM' }, false, ['encrypt'])
