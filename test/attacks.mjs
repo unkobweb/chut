@@ -155,4 +155,77 @@ section('02 · Unbounded fields: one request must not be able to bloat the datab
   )
 }
 
+// =============================================================================
+section('03 · Confirmation page: no unauthenticated leak, no existence oracle')
+// =============================================================================
+// The threat model states that someone who reads the link in the chat cannot
+// learn the secret. That held — but /s/:id/done answered any caller, with no
+// poll_token and no API key, in any state, and rendered the request label. A
+// label like "Production database password" is intelligence on its own. The
+// 404-vs-200 split also turned the endpoint into an existence oracle that
+// outlived the request itself.
+{
+  const LABEL = 'Production database password'
+  const req = await createRequest({ label: LABEL, purpose: 'Nightly backup rotation' })
+
+  const beforeFill = await fetch(`${BASE}/s/${req.id}/done`)
+  const beforeBody = await beforeFill.text()
+  check(
+    'the confirmation page does not leak the label before filling',
+    !beforeBody.includes(LABEL),
+    `status ${beforeFill.status}, label found in body`,
+  )
+
+  await fillRequest(req, 'sk-leak-check')
+
+  const afterFill = await fetch(`${BASE}/s/${req.id}/done`)
+  check(
+    'the confirmation page does not leak the label after filling',
+    !(await afterFill.text()).includes(LABEL),
+  )
+
+  await api(`/v1/requests/${req.id}/reveal`, {
+    method: 'POST',
+    body: JSON.stringify({ poll_token: req.poll_token, encryption_key: req.encryption_key }),
+  })
+
+  const afterBurn = await fetch(`${BASE}/s/${req.id}/done`)
+  check(
+    'the label is still not exposed once the secret is burned',
+    !(await afterBurn.text()).includes(LABEL),
+  )
+
+  // The purpose field is just as sensitive: it describes what the key unlocks.
+  const purposeLeak = await fetch(`${BASE}/s/${req.id}/done`)
+  check(
+    'the purpose is not exposed either',
+    !(await purposeLeak.text()).includes('Nightly backup rotation'),
+  )
+
+  // An unauthenticated caller must not be able to tell a real id from a fake one.
+  const real = await fetch(`${BASE}/s/${req.id}/done`)
+  const fake = await fetch(`${BASE}/s/aaaaaaaaaaaaaaaa/done`)
+  check(
+    'a valid and an invalid id are indistinguishable',
+    real.status === fake.status,
+    `valid -> ${real.status}, invalid -> ${fake.status}`,
+  )
+
+  // The form page itself must never expose the label once the link is consumed.
+  const consumedForm = await fetch(`${BASE}/s/${req.id}`)
+  check(
+    'the consumed form page does not expose the label',
+    !(await consumedForm.text()).includes(LABEL),
+  )
+
+  // A human who just submitted still deserves a confirmation screen.
+  const generic = await fetch(`${BASE}/done`)
+  const genericBody = await generic.text()
+  check('a confirmation screen is still served', generic.status === 200, `got ${generic.status}`)
+  check(
+    'and it carries nothing about any particular request',
+    !genericBody.includes(LABEL) && !genericBody.includes(req.id),
+  )
+}
+
 report(proc)

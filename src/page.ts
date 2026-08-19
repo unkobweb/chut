@@ -84,15 +84,23 @@ export function renderClosed(nonce: string, opts: { title: string; message: stri
   )
 }
 
-export function renderSuccess(nonce: string, label: string): string {
+/**
+ * Deliberately says nothing about the request it confirms: no id, no label, no
+ * purpose, and no database lookup behind it. This page is served at a fixed URL
+ * with no identifier, so it cannot leak anything to a caller who merely saw the
+ * link go by, and cannot be used to tell a real request from a made-up one.
+ *
+ * The human just typed the value; they do not need to be told what it was.
+ */
+export function renderSuccess(nonce: string): string {
   return shell(
     'Secret delivered',
     nonce,
     `<div class="ok-icon">&#10003;</div>
      <h1>Delivered</h1>
-     <p class="sub">${escapeHtml(label)} was encrypted in your browser and sent.
+     <p class="sub">Your value was encrypted in your browser and sent.
      The agent can now retrieve it, once.</p>
-     <div class="foot">You can close this tab. This link will not work again.</div>`,
+     <div class="foot">You can close this tab. That link will not work again.</div>`,
   )
 }
 
@@ -243,7 +251,9 @@ export function renderForm(
         if (!r.ok) throw new Error(r.data && r.data.message ? r.data.message : 'Submission refused.');
         input.value = '';
         // replace() rather than assign(): drops the key-bearing URL from history.
-        location.replace('/s/' + ID + '/done');
+        // The destination carries no id, so nothing about this request survives
+        // in the address bar either.
+        location.replace('/done');
       })
       .catch(function (err) {
         submit.disabled = false;

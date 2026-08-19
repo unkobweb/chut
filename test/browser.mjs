@@ -84,6 +84,11 @@ await page.waitForURL(/\/done$/, { timeout: 10_000 })
 await page.screenshot({ path: `${OUT}/3-confirmation.png`, fullPage: true })
 
 check('redirects to the confirmation page', page.url().endsWith('/done'))
+check(
+  'the confirmation URL carries neither the id nor the key',
+  !page.url().includes(created.id) && !page.url().includes('#'),
+  page.url(),
+)
 check('the request body carries no plaintext secret', !String(submittedBody).includes(SECRET))
 check('the request body does carry ciphertext', /"ciphertext"/.test(String(submittedBody)))
 

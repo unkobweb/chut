@@ -186,17 +186,16 @@ pub.post(
   },
 )
 
-/** Confirmation shown after a successful submission. */
-pub.get('/s/:id/done', (c) => {
+/**
+ * Confirmation shown after a successful submission.
+ *
+ * Static on purpose: no id in the path, no database lookup, identical response
+ * for every caller. The previous /s/:id/done answered anyone holding the link,
+ * in any state, and rendered the request label — which is intelligence in itself
+ * ("Production database password") — while its 404-vs-200 split doubled as an
+ * existence oracle that outlived the request.
+ */
+pub.get('/done', (c) => {
   const n = nonce()
-  const row = queries.byId.get(c.req.param('id'))
-  if (!row) {
-    return secureHtml(
-      c,
-      renderClosed(n, { title: 'Link not found', message: 'This link does not exist.' }),
-      n,
-      404,
-    )
-  }
-  return secureHtml(c, renderSuccess(n, row.label), n)
+  return secureHtml(c, renderSuccess(n), n)
 })
