@@ -15,6 +15,13 @@ mkdir -p .claude/skills && cp -r path/to/chut/skills/chut .claude/skills/
 
 **Cowork / Claude Desktop** — the same folder, wherever your skills live.
 
+**Hermes** — this repository is a valid tap, so no packaging is involved:
+
+```bash
+hermes skills tap add unkobweb/chut
+hermes skills install chut
+```
+
 The skill works on its own: it drives the HTTP API with `curl` and `jq`, so it
 needs nothing installed. If [`chut-mcp`](../packages/mcp) is also connected it
 uses those tools instead, which is tidier.
@@ -79,4 +86,17 @@ python3 evals/trigger-skill.py             # skill only
 python3 evals/trigger-with-claude-md.py    # skill + the standing instruction
 ```
 
+(from the repository root — the bench lives in [`evals/`](../evals), outside
+`skills/`, because everything under `skills/` is treated as a skill by the
+registries that index this repo.)
+
 Both need the `claude` CLI on your PATH. Roughly ten minutes each.
+
+## A note on the frontmatter
+
+`version` and `author` are at the top level because that is where Hermes and
+ClawHub look for them. Anthropic's `.skill` packager validates a narrower set of
+keys and rejects both, so this skill installs by copying the folder — which is
+the documented route for Claude Code anyway — rather than as a `.skill` bundle.
+Claude Code itself reads the file fine and ignores what it does not recognise;
+this was verified, not assumed.

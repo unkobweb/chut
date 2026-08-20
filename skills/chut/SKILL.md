@@ -1,6 +1,16 @@
 ---
 name: chut
 description: "Ask a human for a credential — an API key, access token, password, or private key — through a one-time, browser-encrypted link instead of having them type it into the conversation. Use this skill at the START of any task that will need a secret the user holds and you do not: calling a third-party API, deploying to a host, pushing to a repository, connecting to a database, wiring up a webhook or an integration, or running a script that authenticates against a service. Check the environment first — if the credential is already there, carry on without this skill. Use it the moment you would otherwise ask them to paste a key in chat or to add one to a .env file, and whenever a command fails with 401 or 403 for want of a credential. Use it too when the user says they are about to give you a key. Anything pasted into a conversation stays in its history for as long as the history exists, and is re-sent to the model on every subsequent turn; this keeps it out."
+version: 0.1.0
+author: unkobweb
+license: MIT
+metadata:
+  hermes:
+    tags:
+      - Security
+      - Credentials
+      - API keys
+      - Secrets
 ---
 
 # chut
