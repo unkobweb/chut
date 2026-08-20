@@ -17,6 +17,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { ChutError, cancel, createRequest, getState, reveal, waitForFill } from './chut.js'
+import { discard, drop, ttlSeconds } from './file-drop.js'
 
 const config = { baseUrl: (process.env.CHUT_URL ?? 'https://chut.sh').replace(/\/+$/, '') }
 
@@ -153,9 +154,11 @@ server.registerTool(
 
       if (state.status === 'filled') {
         return text(
-          `Filled. Call reveal_secret with id ${id} when you are ready to use the ` +
-            `value — it is destroyed on the first read, so read it at the moment you ` +
-            `need it rather than in advance.` +
+          `Filled. When you are ready to use the value, call reveal_secret_to_file ` +
+            `if you will use it from a shell command — that keeps it out of this ` +
+            `conversation entirely — or reveal_secret otherwise. Either way it is ` +
+            `destroyed on the first read, so read it at the moment you need it rather ` +
+            `than in advance.` +
             (state.openedCount > 1
               ? `\n\nWorth mentioning to your human: the page was opened ${state.openedCount} ` +
                 `times before it was filled. That is usually harmless — a preview, a ` +
@@ -189,8 +192,14 @@ server.registerTool(
   {
     title: 'Read the secret, once',
     description:
-      'Return the value the human submitted, in the clear. Reading destroys it: ' +
-      'the ciphertext is erased server-side and a second call will fail.\n\n' +
+      'Return the value the human submitted, in the clear, as text in this ' +
+      'conversation. Reading destroys it: the ciphertext is erased server-side and a ' +
+      'second call will fail.\n\n' +
+      'If you are going to use the credential from a shell command, use ' +
+      'reveal_secret_to_file instead — it hands you a path rather than the value, so ' +
+      'nothing sensitive enters this conversation at all. Only use this tool when you ' +
+      'genuinely need the characters, for instance to pass them to an API you are ' +
+      'calling from your own code with no shell involved.\n\n' +
       'Call this at the moment you are about to use the value, not before. Then ' +
       'use it and let it go:\n' +
       '  - do not repeat it back to the human — they gave it to you precisely so it ' +
@@ -213,6 +222,73 @@ server.registerTool(
             : '(Still readable until it expires. Do not repeat it in your reply.)'),
       )
     }),
+)
+
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'reveal_secret_to_file',
+  {
+    title: 'Read the secret into a file, without seeing it',
+    description:
+      'Read the secret and write it to a private file, returning only the path. ' +
+      'The value never enters this conversation.\n\n' +
+      'Prefer this over reveal_secret whenever you will use the credential from a ' +
+      'shell command, which is most of the time. Read the file inside the command ' +
+      'that needs it:\n\n' +
+      '  curl -H "Authorization: Bearer $(cat <path>)" https://api.example.com/v1/me\n' +
+      '  STRIPE_API_KEY="$(cat <path>)" stripe customers list\n' +
+      '  git push https://x-access-token:$(cat <path>)@github.com/owner/repo\n\n' +
+      'Never read the file on its own — no `cat <path>`, no `echo`, no opening it ' +
+      'with a file-reading tool, not even to check it worked. Anything you print ' +
+      'lands in this conversation, which is the exact thing this tool exists to ' +
+      'avoid, and the write already succeeded or you would have got an error.\n\n' +
+      'Reading destroys the secret on the server: a second call will fail. The file ' +
+      'is readable only by you, is removed automatically, and can be removed sooner ' +
+      'with discard_secret_file once you are done.',
+    inputSchema: {
+      id: z.string().min(1).describe('The request id returned by ask_human_for_secret.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  },
+  async ({ id }) =>
+    guard(async () => {
+      const { secret } = await reveal(config, id)
+      const { path, expiresInSeconds } = drop(id, secret)
+      const minutes = Math.round(expiresInSeconds / 60)
+      return text(
+        `${path}\n\n` +
+          `The value is in that file and nowhere in this conversation. Use it inside ` +
+          `a command — "$(cat ${path})" — and do not print it.\n` +
+          `Readable only by you, removed in ${minutes} minute${minutes === 1 ? '' : 's'} ` +
+          `or when this server stops. Call discard_secret_file when you are done.`,
+      )
+    }),
+)
+
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  'discard_secret_file',
+  {
+    title: 'Delete a secret file early',
+    description:
+      'Delete a file created by reveal_secret_to_file, as soon as you have finished ' +
+      'using it. It would be removed on its own eventually; doing it now shortens ' +
+      'the window in which a plaintext credential exists on disk.',
+    inputSchema: {
+      path: z.string().min(1).describe('The path returned by reveal_secret_to_file.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+  },
+  async ({ path }) =>
+    guard(async () =>
+      text(
+        discard(path)
+          ? 'Deleted.'
+          : 'Nothing to delete: that path was not created by this server, or it is already gone.',
+      ),
+    ),
 )
 
 // ---------------------------------------------------------------------------
@@ -244,4 +320,4 @@ await server.connect(transport)
 
 // stdout is the protocol channel. Anything written there that is not a JSON-RPC
 // frame corrupts the stream, so diagnostics go to stderr, always.
-process.stderr.write(`chut mcp ready · ${config.baseUrl}\n`)
+process.stderr.write(`chut mcp ready · ${config.baseUrl} · file drops expire after ${ttlSeconds}s\n`)

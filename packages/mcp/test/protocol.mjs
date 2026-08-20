@@ -9,6 +9,7 @@
  * tools return is a string that ends up in one.
  */
 
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
@@ -52,7 +53,7 @@ const flatten = (result) => (result.content ?? []).map((c) => c.text ?? '').join
 const transport = new StdioClientTransport({
   command: 'npx',
   args: ['tsx', 'src/server.ts'],
-  env: { ...process.env, CHUT_URL: CHUT },
+  env: { ...process.env, CHUT_URL: CHUT, CHUT_FILE_TTL_SECONDS: '2' },
   stderr: 'pipe',
 })
 const client = new Client({ name: 'chut-protocol-test', version: '0.1.0' })
@@ -66,7 +67,10 @@ try {
   section('Discovery')
   const { tools } = await client.listTools()
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
-  const expected = ['ask_human_for_secret', 'check_secret_request', 'reveal_secret', 'cancel_secret_request']
+  const expected = [
+    'ask_human_for_secret', 'check_secret_request', 'reveal_secret',
+    'reveal_secret_to_file', 'discard_secret_file', 'cancel_secret_request',
+  ]
   check('all four tools are advertised', expected.every((n) => n in byName), tools.map((t) => t.name).join(', '))
   check(
     'every tool carries a description',
@@ -82,6 +86,16 @@ try {
     'ask_human_for_secret insists on the fragment',
     /after the "#"/.test(byName.ask_human_for_secret?.description ?? ''),
     'a link copied without its fragment cannot decrypt anything',
+  )
+  check(
+    'reveal_secret_to_file forbids reading the file on its own',
+    /never read the file on its own/i.test(byName.reveal_secret_to_file?.description ?? ''),
+    'an agent that cats the file to check it worked has undone the whole point',
+  )
+  check(
+    'reveal_secret points at the file variant first',
+    /reveal_secret_to_file instead/.test(byName.reveal_secret?.description ?? ''),
+    'left to itself a model takes the tool whose name matches its intent',
   )
 
   // ------------------------------------------------------------------- create
@@ -194,13 +208,104 @@ try {
     'the page still answers 200 after a cancellation',
   )
 
+  // ---------------------------------------------------------- the file variant
+  // The whole reason this tool exists: a tool result is transcript, so the
+  // value has to leave by another door.
+  section('Revealing into a file')
+  const second = await client.callTool({ name: 'ask_human_for_secret', arguments: {
+    requester: 'protocol test', label: 'Key read into a file' } })
+  const secondId = /Request id: (\S+)/.exec(flatten(second))?.[1]
+  const secondUrl = /https?:\/\/\S+#\S+/.exec(flatten(second))?.[0]
+  const FILE_SECRET = `sk-live-file-variant-${Date.now()}`
+  await fillAsHuman(secondUrl, FILE_SECRET)
+
+  const dropped = await client.callTool({ name: 'reveal_secret_to_file', arguments: { id: secondId } })
+  const droppedText = flatten(dropped)
+  check('the call succeeds', dropped.isError !== true, droppedText.slice(0, 200))
+  check(
+    'the secret is NOT in the tool result',
+    !droppedText.includes(FILE_SECRET),
+    'this is the entire point of the tool',
+  )
+
+  const path = /^(\/\S+\.secret)/m.exec(droppedText)?.[1]
+  check('a path is returned', !!path, droppedText.slice(0, 200))
+  check(
+    'the file holds the secret, byte for byte',
+    readFileSync(path, 'utf8') === FILE_SECRET,
+    'trailing newlines break credentials passed through verbatim',
+  )
+  check(
+    'and is readable by nobody else',
+    (statSync(path).mode & 0o777) === 0o600,
+    `mode ${(statSync(path).mode & 0o777).toString(8)} — a shared temp directory is world-readable`,
+  )
+
+  const discarded = await client.callTool({ name: 'discard_secret_file', arguments: { path } })
+  check('it can be discarded early', /deleted/i.test(flatten(discarded)), flatten(discarded).slice(0, 120))
+  check('and really is gone', !existsSync(path))
+  const again2 = await client.callTool({ name: 'discard_secret_file', arguments: { path } })
+  check('discarding twice is not an error', again2.isError !== true)
+  check(
+    'a path this server did not create is refused',
+    /not created by this server/i.test(
+      flatten(await client.callTool({ name: 'discard_secret_file', arguments: { path: '/etc/passwd' } })),
+    ),
+    'the tool must not be a way to delete arbitrary files',
+  )
+
+  // The TTL is set to 2s by the runner, so this is a real expiry, not a mock.
+  const third = await client.callTool({ name: 'ask_human_for_secret', arguments: {
+    requester: 'protocol test', label: 'Key that should evaporate' } })
+  const thirdId = /Request id: (\S+)/.exec(flatten(third))?.[1]
+  await fillAsHuman(/https?:\/\/\S+#\S+/.exec(flatten(third))[0], 'sk-evaporates')
+  const expiring = flatten(await client.callTool({ name: 'reveal_secret_to_file', arguments: { id: thirdId } }))
+  const expiringPath = /^(\/\S+\.secret)/m.exec(expiring)?.[1]
+  check('the file is there right after the drop', existsSync(expiringPath))
+  await new Promise((r) => setTimeout(r, 3500))
+  check(
+    'and removes itself once its time is up',
+    !existsSync(expiringPath),
+    'a plaintext credential left on disk indefinitely is worse than the transcript',
+  )
+
   // ------------------------------------------------------------------- errors
   section('Failure modes')
   const unknown = await client.callTool({ name: 'check_secret_request', arguments: { id: 'nope' } })
   check('an unknown id is an error, not a crash', unknown.isError === true)
-  check('the server is still alive afterwards', (await client.listTools()).tools.length === 4)
+  check('the server is still alive afterwards', (await client.listTools()).tools.length === 6)
 } finally {
   await client.close()
+}
+
+// -----------------------------------------------------------------------------
+// A separate server, because the assertion is about what its death leaves behind.
+section('Nothing plaintext outlives the process')
+{
+  const t2 = new StdioClientTransport({
+    command: 'npx',
+    args: ['tsx', 'src/server.ts'],
+    env: { ...process.env, CHUT_URL: CHUT, CHUT_FILE_TTL_SECONDS: '600' },
+    stderr: 'pipe',
+  })
+  const c2 = new Client({ name: 'chut-shutdown-test', version: '0.1.0' })
+  await c2.connect(t2)
+
+  const req = await c2.callTool({ name: 'ask_human_for_secret', arguments: {
+    requester: 'shutdown test', label: 'Key left behind' } })
+  const rid = /Request id: (\S+)/.exec(flatten(req))?.[1]
+  await fillAsHuman(/https?:\/\/\S+#\S+/.exec(flatten(req))[0], 'sk-should-not-survive')
+  const dropText = flatten(await c2.callTool({ name: 'reveal_secret_to_file', arguments: { id: rid } }))
+  const leftover = /^(\/\S+\.secret)/m.exec(dropText)?.[1]
+  check('the file exists while the server runs', existsSync(leftover))
+
+  await c2.close()
+  await new Promise((r) => setTimeout(r, 1500))
+  check(
+    'and is gone once the server stops',
+    !existsSync(leftover),
+    'a ten-minute TTL is no comfort if the host restarts the server every session',
+  )
 }
 
 console.log(`\n\x1b[1m${passed} passed, ${failed} failed\x1b[0m\n`)
