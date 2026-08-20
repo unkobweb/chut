@@ -1,0 +1,14 @@
+[
+  {"query": "bon j'ai fini le script qui pull les factures stripe, tu peux le lancer et me dire combien y'en a sur novembre ? le fichier c'est scripts/invoices.py", "should_trigger": true},
+  {"query": "j'aimerais que tu check les issues ouvertes sur mon repo unkobweb/chut et que tu me fasses un résumé de celles qui touchent à la sécu", "should_trigger": true},
+  {"query": "peux tu deployer la branche actuelle sur vercel stp, y'a deja un vercel.json a la racine", "should_trigger": true},
+  {"query": "salut, je vais te filer une clé API openai pour que tu testes le endpoint de résumé, comment je te la passe ?", "should_trigger": true},
+  {"query": "mon script d'export tombe en 401 depuis ce matin sur l'api sendgrid, tu peux regarder ce qui se passe ? c'est dans src/mailer.ts", "should_trigger": true},
+  {"query": "j'ai besoin que tu ajoutes un webhook slack qui poste dans #alerts quand le build casse, tu peux faire l'intégration ?", "should_trigger": true},
+  {"query": "explique moi comment fonctionne le chiffrement AES-GCM et pourquoi on met l'IV en clair a coté du ciphertext", "should_trigger": false},
+  {"query": "dans mon .env local j'ai DATABASE_URL qui pointe vers un host bizarre, tu peux le lire et me dire vers quoi ca pointe exactement ?", "should_trigger": false},
+  {"query": "genere moi une clé secrète de 32 octets en base64url pour signer mes JWT, avec la commande openssl qui va bien", "should_trigger": false},
+  {"query": "y'a une api key hardcodée quelque part dans le repo je crois, tu peux grep et me dire ou elle est pour que je la revoque ?", "should_trigger": false},
+  {"query": "STRIPE_SECRET_KEY est deja dans mon env, lance le script de reconciliation et donne moi le total", "should_trigger": false},
+  {"query": "ecris moi une fonction qui hash un mot de passe avec argon2id et qui verifie le hash, en typescript, avec les bons paramètres de cout", "should_trigger": false}
+]
