@@ -71,12 +71,24 @@ run twice against `claude -p` with the skill actually installed.
 |---|---|---|
 | MCP server alone | 2 / 6 | — |
 | Skill alone | 2 / 6 | 6 / 6 |
-| Skill + `CLAUDE.md` | **5 / 6** | **6 / 6** |
+| Skill + `CLAUDE.md` | 3–5 / 6 | 5–6 / 6 |
 
-The one that still never fires: *"run the script that pulls my Stripe invoices"*.
-The agent runs it, watches it fail, and reports the failure — reasonably, since
-from where it stands the script is simply broken. Worth knowing rather than
-papering over.
+**Read those as directions, not as digits.** Two runs per prompt is a small
+sample: the same configuration measured 5/6 and then 4/6 on consecutive passes,
+and one near-miss flipped between them. What survives that noise is the ordering
+— the standing instruction roughly doubles how often the skill fires, and
+precision holds nearly everywhere. The individual numbers do not survive it.
+Settling the finer differences would take six or more runs per prompt.
+
+That is also why the description is 520 characters and not the 966 it started
+at: a longer one measured slightly better on one pass and no better on the next,
+which is not enough to justify sitting in the context of every session of
+everyone who installs this.
+
+One prompt never fires, in any configuration, on any pass: *"run the script that
+pulls my Stripe invoices"*. The agent runs it, watches it fail, and reports the
+failure — reasonably, since from where it stands the script is simply broken.
+Worth knowing rather than papering over.
 
 Rerun it yourself after any edit to the description, because a rewrite that reads
 better can easily trigger worse:
